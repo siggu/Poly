@@ -12,7 +12,6 @@
 
 import json
 import os
-import sys
 from datetime import datetime
 from typing import List, Dict, Set
 import requests
@@ -20,32 +19,26 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import time
 
-# crawler 폴더의 모듈 import (경로 설정 등)
-script_dir = os.path.dirname(__file__)
-crawler_dir = os.path.join(script_dir, "crawler")
-if crawler_dir not in sys.path:
-    sys.path.insert(0, crawler_dir)
+# 공통 모듈 import
+import sys
 
-try:
-    from llm_structured_crawler import LLMStructuredCrawler
-except ImportError:
-    print(
-        "오류: 'crawler' 디렉토리에서 'llm_structured_crawler' 모듈을 찾을 수 없습니다."
-    )
-    print(f"현재 경로: {script_dir}")
-    print(f"탐색 경로: {crawler_dir}")
-    sys.exit(1)
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
+import utils
+from base.base_crawler import BaseCrawler
+from base.llm_crawler import LLMStructuredCrawler
 
 
-class HealthCareWorkflow:
+class HealthCareWorkflow(BaseCrawler):
     """보건소 사이트 크롤링 및 구조화 워크플로우 (탭 처리 기능 포함 - 컨테이너 저장)"""
 
-    def __init__(self, output_dir: str = "crawling/output", region: str = None):
+    def __init__(self, output_dir: str = "app/interface/crawling/output", region: str = None):
         """
         Args:
             output_dir: 결과 저장 디렉토리
             region: 지역명 (예: "동작구"). None이면 URL에서 자동 추출 시도
         """
+        super().__init__()  # BaseCrawler 초기화
         self.output_dir = output_dir
         self.region = region
         # LLM 크롤러 초기화 시 모델 지정
@@ -54,60 +47,18 @@ class HealthCareWorkflow:
         # 출력 디렉토리 생성
         os.makedirs(output_dir, exist_ok=True)
 
-    def extract_region_from_url(self, url: str) -> str:
-        """
-        URL에서 지역명 추출 시도 (이전과 동일)
-        """
-        region_mapping = {
-            "gangnam": "강남구",
-            "gangdong": "강동구",
-            "gangbuk": "강북구",
-            "gangseo": "강서구",
-            "guro": "구로구",
-            "gwanak": "관악구",
-            "dongjak": "동작구",
-            "gwangjin": "광진구",
-            "nowon": "노원구",
-            "jongno": "종로구",
-            # "ep": "은평구",
-            "yongsan": "용산구",
-            # "ydp": "영등포구",
-            "junggu": "중구",
-        }
-        parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-        for key, value in region_mapping.items():
-            if key in domain:
-                return value
-        # 매핑 실패 시 도메인 첫 부분 반환 또는 기본값 설정
-        return domain.split(".")[0] if "." in domain else "unknown"
-
     def collect_links(self, start_url: str, crawl_rules: List[Dict]) -> List[Dict]:
         """
         초기 링크 목록 수집 (LNB 등 - 이전과 동일한 로직)
         """
-        parsed_url = urlparse(start_url)
-        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        base_url = utils.get_base_url(start_url)
 
-        session = requests.Session()
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-
-        # 사이트별 특수 처리 (쿠키, SSL)
-        verify_ssl = True
-        if "gangbuk" in start_url.lower():
-            session.cookies.set("sabFingerPrint", "1920,1080,www.gangbuk.go.kr")
-            session.cookies.set("sabSignature", "f3m9iqAXBBmHE38diIuA0A==")
-        if "gangseo" in start_url.lower():
-            verify_ssl = False
-            import urllib3
-
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        # 사이트별 특수 처리 (쿠키, SSL) - BaseCrawler에서 처리
+        verify_ssl = self._apply_site_specific_config(start_url)
 
         try:
-            response = session.get(
-                start_url, headers=headers, timeout=15, verify=verify_ssl
+            response = self.session.get(
+                start_url, timeout=config.DEFAULT_TIMEOUT, verify=verify_ssl
             )
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
@@ -241,11 +192,11 @@ class HealthCareWorkflow:
                     continue
 
                 print(f"\n  LNB 하위 탐색: {category['name']}")
-                time.sleep(0.5)  # Rate limiting
+                time.sleep(config.RATE_LIMIT_DELAY)  # Rate limiting
 
                 try:
-                    cat_response = session.get(
-                        category["url"], headers=headers, timeout=10, verify=verify_ssl
+                    cat_response = self.session.get(
+                        category["url"], timeout=10, verify=verify_ssl
                     )
                     cat_response.raise_for_status()
                     # 인코딩 명시적 설정 (필요시)
@@ -322,103 +273,9 @@ class HealthCareWorkflow:
         print("보건소 사이트 크롤링 워크플로우 시작")
         print("=" * 80)
 
-        # 기본 크롤링 규칙 (하드코딩 - 필요시 config.py 등으로 분리)
+        # 기본 크롤링 규칙 (config.py에서 가져오기)
         if crawl_rules is None:
-            # (이전 답변과 동일한 규칙 목록)
-            crawl_rules = [
-                {
-                    "name": "동작구 건강관리청 LNB",
-                    "domain": "dongjak",
-                    "main_selector": ".left-area .left-mdp1 > li > a",
-                    "sub_selector": [
-                        ".left-mdp1 > li.on > ul > li > a",
-                        ".tab-list li a",
-                    ],
-                },
-                {
-                    "name": "강남구보건소 LNB",
-                    "domain": "gangnam",
-                    "main_selector": ".left_menu_list > .oneDepth > a",
-                    "sub_selector": [
-                        ".oneDepth.active .twoDepth .oneDepth a",
-                        ".tabmenu ul li a",
-                    ],
-                },
-                {
-                    "name": "강동구 보건소 LNB",
-                    "domain": "gangdong",
-                    "single_page": True,
-                    "filter_menu": "보건사업",
-                    "menu_container": ".gnb",
-                    "main_selector": ".depth-02 > li > a",
-                    "sub_selector": "ul > li > a",
-                },
-                {
-                    "name": "강북구 보건소 LNB",
-                    "domain": "gangbuk",
-                    "main_selector": ".lnb nav > ul > li > a",
-                    "sub_selector": ".lnb nav > ul > li.on > ul > li > a",
-                },
-                {
-                    "name": "강서구 보건소 LNB",
-                    "domain": "gangseo",
-                    "single_page": True,
-                    "menu_container": ".lnb-wrap",
-                    "main_selector": ".lnb-menu > li > a",
-                    "sub_selector": "ul > li > a",
-                },
-                {
-                    "name": "관악구 보건소 LNB",
-                    "domain": "gwanak",
-                    "filter_menu": "사업안내",
-                    "main_selector": "#snav nav > .dep1 > li > a",
-                    "sub_selector": "#snav .dep1 > li.on .dep2 > li > a",
-                },
-                {
-                    "name": "광진구 보건소 LNB",
-                    "domain": "gwangjin",
-                    "main_selector": "nav.lnb > ul > li > a",
-                    "sub_selector": "nav.lnb > ul > li.on > div > ul > li > a",
-                },
-                {
-                    "name": "노원구 보건소 LNB",
-                    "domain": "nowon",
-                    "main_selector": ".sidebar-inner > ul > li > a",
-                    "sub_selector": ".sidebar-inner > ul > li.active > ul > li > a",
-                },
-                {
-                    "name": "종로구 보건소 LNB",
-                    "domain": "jongno",
-                    "single_page": True,
-                    "menu_container": ".lnb-wrap",
-                    "main_selector": ".lnb-depth1 > li > a.btn.btn-toggle",
-                    "sub_selector": ".lnb-depth2 > li > a.btn",
-                },
-                # {
-                #     "name": "은평구 보건소 LNB",
-                #     "domain": "ep",
-                #     "main_selector": ".depth1_list > li.depth_item > a",
-                #     "sub_selector": ".depth2 > .depth2_list > li.depth.item > a",
-                # },
-                {
-                    "name": "용산구 보건소 LNB",
-                    "domain": "yongsan",  # URL에 "junggu"이 포함된 경우에만 적용
-                    "main_selector": "nav.lnb a",
-                    "sub_selector": "null",
-                },
-                # {
-                #     "name": "영등포구 보건소 LNB",
-                #     "domain": "ydp",  # URL에 "junggu"이 포함된 경우에만 적용
-                #     "main_selector": ".container > .wrap > .side > .depth1 >  ul > li > a",
-                #     "sub_selector": "li > .depth2 > ul > li > a",
-                # },
-                {
-                    "name": "중구 보건소 LNB",
-                    "domain": "junggu",  # URL에 "junggu"이 포함된 경우에만 적용
-                    "main_selector": "div.lnb_area a[href!='#none']",
-                    "sub_selector": "null",
-                },
-            ]
+            crawl_rules = config.CRAWL_RULES
 
         # 1단계: 초기 링크 수집
         print("\n[1단계] 초기 링크 수집 중...")
@@ -451,12 +308,8 @@ class HealthCareWorkflow:
             link["url"] for link in initial_links
         }  # 중복 방지 Set
 
-        # 탭 메뉴를 찾는 데 사용할 CSS 선택자 목록
-        tab_selectors = [
-            ".tabmenu ul li a",  # 강남구 등
-            ".tab-list li a",  # 동작구 예시 (실제 확인 필요)
-            # 다른 사이트 탭 선택자 추가
-        ]
+        # 탭 메뉴를 찾는 데 사용할 CSS 선택자 목록 (config.py에서 가져오기)
+        tab_selectors = config.TAB_SELECTORS
 
         processed_count = 0
 
@@ -508,7 +361,7 @@ class HealthCareWorkflow:
 
                 # ★★★ 3. 현재 페이지 LLM 구조화 (탭 유무와 상관없이 실행) ★★★
                 print("    → 내용 구조화 진행...")
-                region = self.region or self.extract_region_from_url(url)
+                region = self.region or utils.extract_region_from_url(url)
                 # LLM 호출 시 수집된 name을 title로 명확히 전달
                 structured_data = self.crawler.crawl_and_structure(
                     url=url,  # crawler 내부에서 fetch 또는 soup 처리
@@ -565,7 +418,7 @@ class HealthCareWorkflow:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # 지역명은 초기 URL 기준 또는 지정된 값 사용
-        region_name = self.region or self.extract_region_from_url(start_url)
+        region_name = self.region or utils.extract_region_from_url(start_url)
 
         # 전체 구조화 데이터 저장
         output_file = os.path.join(
@@ -641,8 +494,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="crawling/output",
-        help="결과를 저장할 기본 디렉토리. 최종 경로는 'crawling/output/지역명' 형태가 됩니다.",
+        default="app/interface/crawling/output",
+        help="결과를 저장할 기본 디렉토리. 최종 경로는 'app/interface/crawling/output/지역명' 형태가 됩니다.",
     )
     parser.add_argument(
         "--region",
@@ -667,8 +520,7 @@ def main():
             return
 
     # 지역명 결정
-    temp_workflow = HealthCareWorkflow()  # 지역명 추출용 임시 인스턴스
-    region_name = region or temp_workflow.extract_region_from_url(url)
+    region_name = region or utils.extract_region_from_url(url)
     if not region_name or region_name == "unknown":
         print(
             "경고: URL에서 지역명을 추출할 수 없거나 'unknown'입니다. 기본 디렉토리를 사용합니다."

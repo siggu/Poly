@@ -7,9 +7,16 @@ from pydantic import BaseModel, Field
 import os
 import uuid
 from dotenv import load_dotenv
+import sys
 
 # 환경 변수 로드
 load_dotenv()
+
+# 상위 디렉토리 경로 추가
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+# BaseCrawler import
+from base.base_crawler import BaseCrawler
 
 
 # Pydantic 모델 정의 - 표준 스키마
@@ -51,7 +58,7 @@ class _LLMResponseNoTitle(BaseModel):
     support_content: str = Field(description="지원 내용/혜택/지원 항목을 핵심만 요약")
 
 
-class LLMStructuredCrawler:
+class LLMStructuredCrawler(BaseCrawler):
     """LLM을 사용하여 크롤링 데이터를 구조화하는 크롤러"""
 
     def __init__(self, api_key: str = None, model: str = "gpt-4o"):
@@ -60,6 +67,8 @@ class LLMStructuredCrawler:
             api_key: OpenAI API 키 (없으면 환경변수에서 가져옴)
             model: 사용할 모델 (gpt-4o, gpt-4o-mini 등)
         """
+        super().__init__()  # BaseCrawler 초기화
+
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError(
@@ -68,32 +77,6 @@ class LLMStructuredCrawler:
 
         self.client = OpenAI(api_key=self.api_key)
         self.model = model
-
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-        )
-
-    def fetch_page(self, url: str) -> BeautifulSoup:
-        """웹페이지 가져오기"""
-        try:
-            # 강서구 사이트의 경우 SSL 인증서 검증 비활성화
-            verify_ssl = True
-            if "gangseo" in url.lower():
-                verify_ssl = False
-                import urllib3
-
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-            response = self.session.get(url, timeout=10, verify=verify_ssl)
-            response.raise_for_status()
-            response.encoding = "utf-8"
-            return BeautifulSoup(response.text, "html.parser")
-        except requests.RequestException as e:
-            print(f"페이지 요청 실패: {e}")
-            return None
 
     def parse_html_file(self, file_path: str) -> BeautifulSoup:
         """로컬 HTML 파일 파싱"""

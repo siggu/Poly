@@ -7,7 +7,6 @@ e보건소는 게시판 구조로 되어 있어 일반 보건소 사이트와 �
 - 게시글 상세 페이지 크롤링
 """
 
-import requests
 from bs4 import BeautifulSoup
 import json
 import re
@@ -17,42 +16,24 @@ import sys
 from datetime import datetime
 import time
 
-# LLM 크롤러 import
-sys.path.insert(0, os.path.dirname(__file__))
-from llm_structured_crawler import LLMStructuredCrawler
+# 공통 모듈 import
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
+from base.base_crawler import BaseCrawler
+from base.llm_crawler import LLMStructuredCrawler
 
 
-class EHealthCrawler:
+class EHealthCrawler(BaseCrawler):
     """e보건소 전용 크롤러"""
 
-    # 카테고리 정보 매핑
-    CATEGORIES = {
-        "건강증진": {"bbsSeCd": "Z1", "menuId": "200035"},
-        "질병관리": {"bbsSeCd": "Z2", "menuId": "200036"},
-        "암관리": {"bbsSeCd": "Z3", "menuId": "200037"},
-        "구강보건": {"bbsSeCd": "Z4", "menuId": "200038"},
-        "정신보건": {"bbsSeCd": "Z5", "menuId": "200039"},
-        "가족건강": {"bbsSeCd": "Z6", "menuId": "200040"},
-        "한의약": {"bbsSeCd": "Z7", "menuId": "200041"},
-        "방문건강관리": {"bbsSeCd": "Z8", "menuId": "200091"},
-    }
-
-    BASE_URL = "https://www.e-health.go.kr"
-    BBS_ID = "U00322"
-
-    def __init__(self, output_dir: str = "output"):
+    def __init__(self, output_dir: str = "app/interface/crawling/output"):
         """
         Args:
             output_dir: 결과 저장 디렉토리
         """
+        super().__init__()  # BaseCrawler 초기화
         self.output_dir = output_dir
         self.llm_crawler = LLMStructuredCrawler(model="gpt-4o-mini")
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-        )
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -67,13 +48,13 @@ class EHealthCrawler:
         Returns:
             목록 페이지 URL
         """
-        category_info = self.CATEGORIES.get(category_name)
+        category_info = config.EHEALTH_CATEGORIES.get(category_name)
         if not category_info:
             raise ValueError(f"알 수 없는 카테고리: {category_name}")
 
         url = (
-            f"{self.BASE_URL}/gh/heSrvc/selectBbsDtlInfo.do"
-            f"?bbsId={self.BBS_ID}"
+            f"{config.EHEALTH_BASE_URL}/gh/heSrvc/selectBbsDtlInfo.do"
+            f"?bbsId={config.EHEALTH_BBS_ID}"
             f"&bbsSeCd={category_info['bbsSeCd']}"
             f"&menuId={category_info['menuId']}"
             f"&pageIndex={page_index}"
@@ -92,8 +73,8 @@ class EHealthCrawler:
             상세 페이지 URL
         """
         url = (
-            f"{self.BASE_URL}/gh/heSrvc/selectBbsDtlViewInfo.do"
-            f"?bbsId={self.BBS_ID}"
+            f"{config.EHEALTH_BASE_URL}/gh/heSrvc/selectBbsDtlViewInfo.do"
+            f"?bbsId={config.EHEALTH_BBS_ID}"
             f"&bbsNo={bbs_no}"
             f"&menuId={menu_id}"
         )
@@ -155,7 +136,7 @@ class EHealthCrawler:
         Returns:
             게시글 정보 리스트 [{'name': '...', 'url': '...', 'bbs_no': '...'}]
         """
-        category_info = self.CATEGORIES.get(category_name)
+        category_info = config.EHEALTH_CATEGORIES.get(category_name)
         if not category_info:
             raise ValueError(f"알 수 없는 카테고리: {category_name}")
 
@@ -232,7 +213,7 @@ class EHealthCrawler:
             모든 게시글 정보 리스트
         """
         if categories is None:
-            categories = list(self.CATEGORIES.keys())
+            categories = list(config.EHEALTH_CATEGORIES.keys())
 
         all_links = []
         for category in categories:
@@ -357,7 +338,7 @@ def main():
     parser.add_argument(
         "--categories",
         nargs="+",
-        choices=list(EHealthCrawler.CATEGORIES.keys()),
+        choices=list(config.EHEALTH_CATEGORIES.keys()),
         help="수집할 카테고리 (기본값: 전체)",
     )
     parser.add_argument(
@@ -373,8 +354,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="output",
-        help="출력 디렉토리 (기본값: output)",
+        default="app/interface/crawling/output",
+        help="출력 디렉토리 (기본값: app/interface/crawling/output)",
     )
 
     args = parser.parse_args()
