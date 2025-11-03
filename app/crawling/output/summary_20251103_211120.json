@@ -1,0 +1,11 @@
+{
+  "timestamp": "20251103_211120",
+  "region": "종로구",
+  "start_url": "https://jongno.go.kr/Health.do?menuId=401309&menuNo=401309",
+  "initial_links_collected": 42,
+  "total_urls_processed_or_failed": 42,
+  "successful_structured": 42,
+  "failed_processing": 0,
+  "output_file": "C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\output\\structured_data_종로구.json",
+  "failed_urls_file": null
+}

@@ -1,0 +1,11 @@
+{
+  "timestamp": "20251103_205651",
+  "region": "성북구",
+  "start_url": "https://www.sb.go.kr/bogunso/contents.do?key=6553",
+  "initial_links_collected": 57,
+  "total_urls_processed_or_failed": 57,
+  "successful_structured": 57,
+  "failed_processing": 0,
+  "output_file": "C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\output\\structured_data_성북구.json",
+  "failed_urls_file": null
+}

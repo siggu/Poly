@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://health.gangnam.go.kr/web/business/support/sub04.do",
+    "name": "고위험 임산부",
+    "error": "페이지 내용을 가져올 수 없습니다.",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\crawlers\\district_crawler.py\", line 434, in run\n    raise ValueError(\"페이지 내용을 가져올 수 없습니다.\")\nValueError: 페이지 내용을 가져올 수 없습니다.\n"
+  },
+  {
+    "url": "https://health.gangnam.go.kr/web/business/promotion/sub03.do",
+    "name": "모바일 헬스케어",
+    "error": "페이지 내용을 가져올 수 없습니다.",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\crawlers\\district_crawler.py\", line 434, in run\n    raise ValueError(\"페이지 내용을 가져올 수 없습니다.\")\nValueError: 페이지 내용을 가져올 수 없습니다.\n"
+  },
+  {
+    "url": "https://health.gangnam.go.kr/web/business/moja/infertile/sub02.do",
+    "name": "한의약 난임지원",
+    "error": "페이지 내용을 가져올 수 없습니다.",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\crawlers\\district_crawler.py\", line 434, in run\n    raise ValueError(\"페이지 내용을 가져올 수 없습니다.\")\nValueError: 페이지 내용을 가져올 수 없습니다.\n"
+  },
+  {
+    "url": "https://health.gangnam.go.kr/web/business/promotion/center/sub02.do",
+    "name": "수서동 건강증진센터",
+    "error": "페이지 내용을 가져올 수 없습니다.",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\crawlers\\district_crawler.py\", line 434, in run\n    raise ValueError(\"페이지 내용을 가져올 수 없습니다.\")\nValueError: 페이지 내용을 가져올 수 없습니다.\n"
+  }
+]

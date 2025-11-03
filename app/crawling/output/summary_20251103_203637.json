@@ -1,0 +1,11 @@
+{
+  "timestamp": "20251103_203637",
+  "region": "구로구",
+  "start_url": "https://www.guro.go.kr/health/contents.do?key=1320&",
+  "initial_links_collected": 44,
+  "total_urls_processed_or_failed": 44,
+  "successful_structured": 43,
+  "failed_processing": 1,
+  "output_file": "C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\output\\structured_data_구로구.json",
+  "failed_urls_file": "C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\output\\failed_urls_구로구.json"
+}

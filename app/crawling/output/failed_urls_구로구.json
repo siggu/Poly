@@ -1,0 +1,8 @@
+[
+  {
+    "url": "https://www.guro.go.kr/null",
+    "name": "모자보건 교육사업",
+    "error": "페이지 내용을 가져올 수 없습니다.",
+    "details": "Traceback (most recent call last):\n  File \"C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\crawlers\\district_crawler.py\", line 434, in run\n    raise ValueError(\"페이지 내용을 가져올 수 없습니다.\")\nValueError: 페이지 내용을 가져올 수 없습니다.\n"
+  }
+]

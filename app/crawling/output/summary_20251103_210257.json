@@ -1,0 +1,11 @@
+{
+  "timestamp": "20251103_210257",
+  "region": "영등포구",
+  "start_url": "https://www.ydp.go.kr/health/contents.do?key=6073&",
+  "initial_links_collected": 69,
+  "total_urls_processed_or_failed": 69,
+  "successful_structured": 69,
+  "failed_processing": 0,
+  "output_file": "C:\\Users\\cocoju\\HealthInformer\\app\\crawling\\output\\structured_data_영등포구.json",
+  "failed_urls_file": null
+}

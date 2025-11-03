@@ -1,0 +1,514 @@
+[
+  {
+    "title": "1인 자영업자 등 배우자 출산휴가급여 지원",
+    "description": "1인 자영업자 및 프리랜서 등의 배우자(남편)가 출산휴가를 사용한 경우 출산휴가급여 지원",
+    "department": "저출생담당관",
+    "phone": "02-2133-5027",
+    "detail_id": "113",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=113"
+  },
+  {
+    "title": "1인 자영업자 등 임산부 출산급여 지원",
+    "description": "본인 또는 배우자 출산 시 생계활동에 차질이 생기는 1인 자영업자 및 프리랜서 등 임산부에 출산급여 지원",
+    "department": "저출생담당관",
+    "phone": "02-2133-5027",
+    "detail_id": "112",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=112"
+  },
+  {
+    "title": "35세 이상 임산부 의료비 지원",
+    "description": "서울시 35세 이상 임산부에게 의료비를 지원하여 출산 가정의 경제적 부담을 경감하고 건강한 출산을 지원",
+    "department": "건강관리과",
+    "phone": "02-2133-9485",
+    "detail_id": "184",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=184"
+  },
+  {
+    "title": "경계선지능인 평생교육 지원",
+    "description": "서울시 경계선지능인 당사자와 가족, 관련 종사자에게 교육, 자조모임, 정서지원 등을 통해 경계선지능인의 건강하고 행복한 삶 실현",
+    "department": "평생교육과",
+    "phone": "02-2133-3972",
+    "detail_id": "167",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=167"
+  },
+  {
+    "title": "고위험 임산부 의료비 지원",
+    "description": "고위험 임산부 입원 치료비의 급여 중 전액본인부담금 및 비급여 진료비의 90%를 지원하여 경제적 부담을 줄이고 건강한 출산을 보장",
+    "department": "건강관리과",
+    "phone": "02-2133-9486",
+    "detail_id": "180",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=180"
+  },
+  {
+    "title": "국가형 긴급복지 지원",
+    "description": "갑작스러운 위기상황으로 생계유지가 곤란한 저소득층에게 생계, 의료, 주거지원 등 필요한 복지서비스를 신속하게 지원하여 위기상황에서 벗어날 수 있도록 돕는 제도",
+    "department": "돌봄복지과",
+    "phone": "02-2133-7393",
+    "detail_id": "86",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=86"
+  },
+  {
+    "title": "국민기초생활보장 의료급여",
+    "description": "생활유지 능력이 없거나 생활이 어려운 저소득 국민의 의료문제(질병, 부상, 출산 등)를 국가가 보장하는 공공부조 제도로 건강보험과 함께 국민 의료보장의 중요한 수단이 되는 사회보장제도입니다.",
+    "department": "복지정책과",
+    "phone": "02-2133-7337",
+    "detail_id": "29",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=29"
+  },
+  {
+    "title": "노숙인 및 쪽방주민 결핵검진 지원",
+    "description": "노숙인 및 쪽방주민에 결핵검진비를 지원",
+    "department": "자활지원과",
+    "phone": "02-2133-7494",
+    "detail_id": "50",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=50"
+  },
+  {
+    "title": "노인장기요양보험 의료급여부담금 운영",
+    "description": "「의료급여법」제3조제1항제1호 규정에 따른 수급권자는 본인부담이 없습니다.",
+    "department": "어르신복지과",
+    "phone": "02-2133-7424",
+    "detail_id": "47",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=47"
+  },
+  {
+    "title": "다문화가족 맞춤형 돌봄서비스",
+    "description": "다문화가족 출산 전·후 돌봄 서비스 제공, 가족센터 내 다문화가족 시간제 아이돌봄 서비스 제공",
+    "department": "다문화담당관",
+    "phone": "02-2133-8696",
+    "detail_id": "149",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=149"
+  },
+  {
+    "title": "다문화가족 자녀 언어발달지원서비스",
+    "description": "다문화 가정의 자녀가 건강한 사회구성원, 글로벌 인재로 성장할 수 있도록 언어평가 및 언어교육 지원",
+    "department": "다문화담당관",
+    "phone": "02-2133-8695",
+    "detail_id": "146",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=146"
+  },
+  {
+    "title": "더 아름다운 결혼식",
+    "description": "서울시에서는 결혼식 예약난을 해소하고, 개성있고 의미있는 결혼식을 종합적(대관료, 결혼장려금)으로 지원하여 건강한 결혼식 문화를 조성",
+    "department": "가족담당관",
+    "phone": "02-2133-6545",
+    "detail_id": "134",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=134"
+  },
+  {
+    "title": "독립유공자 의료비 지원",
+    "description": "국가유공자의 예우와 생활안정을 위하여 보훈수당 등을 지급하여 촘촘하고 두터운 보훈정책을 추진하고 있습니다",
+    "department": "복지정책과",
+    "phone": "02-2133-7334",
+    "detail_id": "36",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=36"
+  },
+  {
+    "title": "둘째 출산 시 첫째아이 돌봄 지원",
+    "description": "둘째 자녀 이상 출산으로 기존 자녀 돌봄에 공백이 발생한 가정에서 '아이돌봄 서비스' 이용시 본인부담금의 90~100% 환급 지원",
+    "department": "가족담당관",
+    "phone": "02-2133-6560",
+    "detail_id": "138",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=138"
+  },
+  {
+    "title": "미숙아 및 선천성이상아 의료비 지원",
+    "description": "미숙아 및 선천성이상아 대상 의료비 지원을 통해 환아 가정의 경제적 부담을 완화하고, 미숙아 등 고위험 신생아의 건강한 성장 발달을 도모 (수술 및 치료비 지원)",
+    "department": "건강관리과",
+    "phone": "02-2133-9486",
+    "detail_id": "177",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=177"
+  },
+  {
+    "title": "부모급여 지원",
+    "description": "영아기 집중돌봄을 두텁게 지원하기 위해 2세 미만의 아동에게 급여를 지원함으로써 출산 및 양육으로 인한 경제적 부담 경감",
+    "department": "영유아담당관",
+    "phone": "02-2133-5114",
+    "detail_id": "123",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=123"
+  },
+  {
+    "title": "북한이탈주민 서울시 일반질환 진료비 예방접종비 지원",
+    "description": "북한이탈주민의 건강 증진 및 안정적 정착 환경을 조성하기 위한 질병 조기 치료 및 예방을 지원합니다.",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8673",
+    "detail_id": "215",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=215"
+  },
+  {
+    "title": "북한이탈주민 서울시 종합검진 패키지 지원",
+    "description": "북한이탈주민의 건강한 삶을 보장하기 위한 고위험군 및 일반 질환 조기 발견 등 신체 전반에 대한 건강관리를 지원합니다.",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8673",
+    "detail_id": "214",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=214"
+  },
+  {
+    "title": "북한이탈주민 서울시 치과진료 지원",
+    "description": "북한이탈주민의 구강 건강을 위해 치과 치료비 중 비급여 본인부담금을 지원합니다.",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8673",
+    "detail_id": "216",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=216"
+  },
+  {
+    "title": "북한이탈주민 의료지원(남북하나재단)",
+    "description": "북한이탈주민들의 안정적 국내정착을 위해 본인 부담 의료비를 지원합니다.",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8673",
+    "detail_id": "217",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=217"
+  },
+  {
+    "title": "북한이탈주민 찾아가는 가정돌봄서비스",
+    "description": "북한이탈주민(가정)의 남한사회 적응을 돕고 심리·정서 안정 등 건강한 정착을 위한 개인별·상황별 맞춤 방문 돌봄 서비스를 제공합니다.",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8678",
+    "detail_id": "209",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=209"
+  },
+  {
+    "title": "북한이탈주민 찾아가는 건강돌보미",
+    "description": "탈북과정에서의 트라우마 등 정신적, 신체적으로 어려움을 겪고 있는 북한이탈주민을 대상으로 정신건강전문요원과 정착도우미(자원봉사자)가 방문하여 심리상담과 생활돌봄을 지원",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8679",
+    "detail_id": "210",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=210"
+  },
+  {
+    "title": "산모·신생아 건강관리 서비스 본인부담금 지원",
+    "description": "산모·신생아 건강관리(산모도우미) 서비스(전자바우처)를 이용 완료 후 이용자(산모)의 본임부담금을 현금으로 환급해줌으로써 출산 가정의 경제적 부담 경감",
+    "department": "건강관리과",
+    "phone": "02-2133-9484",
+    "detail_id": "176",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=176"
+  },
+  {
+    "title": "산모·신생아 건강관리 서비스 지원",
+    "description": "출산가정에 산모·신생아 건강관리사를 파견하여 산모의 산후 회복과 신생아의 양육을 지원하고 출산가정의 경제적 부담을 경감 (서비스 이용권 지급)",
+    "department": "건강관리과",
+    "phone": "02-2133-9484",
+    "detail_id": "175",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=175"
+  },
+  {
+    "title": "삼둥이 이상 출산가정 축하 물품 지원",
+    "description": "서울시에 주민등록을 두고 있는 삼태아 이상 출산가정에 신생아 양육에 필요한 생활물품을 직접 가정으로 배송하여 지원",
+    "department": "건강관리과",
+    "phone": "02-2133-9485",
+    "detail_id": "187",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=187"
+  },
+  {
+    "title": "서울시 난임부부 시술비 지원",
+    "description": "난임부부의 경제적 부담을 실효성 있게 경감하고 효과적인 난임치료를 받도록 하여 희망하는 소중한 생명의 임신과 출산을 적극 지원 (시술비, 난임시술 중단 의료비 지원)",
+    "department": "건강관리과",
+    "phone": "02-2133-9492",
+    "detail_id": "188",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=188"
+  },
+  {
+    "title": "서울시 난자동결 시술비용 지원",
+    "description": "서울시의 초저출생 위기 극복을 위한 여성의 가임력 보존 및 건강한 임신 준비를 지원하기 위해 난자 채취를 위한 사전 검사비 및 시술비 지원",
+    "department": "건강관리과",
+    "phone": "02-2133-9493",
+    "detail_id": "189",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=189"
+  },
+  {
+    "title": "서울시 방문건강관리",
+    "description": "고령사회에 대비하여 어르신이 익숙하고 친근한 지역사회에서 건강하게 오래 살 수 있도록 방문건강관리 서비스를 제공하여 건강에 대한 인식을 제고시키고, 스스로 건강을 관리할 수 있는 능력을 향상시키며, 건강상태를 유지·개선하도록 지원",
+    "department": "건강관리과",
+    "phone": "02-2133-9470",
+    "detail_id": "173",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=173"
+  },
+  {
+    "title": "서울시 위기임산부 통합지원",
+    "description": "위기임산부가 충분히 상담을 받고 출산을 결정할 수 있도록 하고, 출산·양육 과정에서 필요한 지원을 받을 수 있도록 지원",
+    "department": "가족담당관",
+    "phone": "02-2133-6562",
+    "detail_id": "139",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=139"
+  },
+  {
+    "title": "서울시 임산부 교통비 지원",
+    "description": "교통 약자인 임산부에게 이동 편의를 제공하여 건강한 출산을 지원하고, 출산 가정의 경제적인 부담을 경감하여 안정적인 출산 환경을 조성",
+    "department": "저출생담당관",
+    "phone": "02-2133-5054",
+    "detail_id": "117",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=117"
+  },
+  {
+    "title": "서울시 자녀출산 무주택가구 주거비 지원",
+    "description": "서울에 거주하는 무주택 가구가 아이가 태어나도 서울에 계속 거주할 수 있도록 월 주거비를 지원",
+    "department": "저출생담당관",
+    "phone": "02-2133-5025",
+    "detail_id": "115",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=115"
+  },
+  {
+    "title": "서울시 청년 마음건강 지원",
+    "description": "서울시에 거주하고 있는 청년에게 자기이해 상담, 간이정신진단검사, 기질 및 성격검사 등 체계적인 맞춤상담 제공",
+    "department": "청년사업담당관",
+    "phone": "02-2133-4329",
+    "detail_id": "154",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=154"
+  },
+  {
+    "title": "서울시 한의약 난임치료 지원",
+    "description": "만혼과 고령출산으로 증가하는 난임부부에게 한의약 난임치료를 지원하여 경제적  부담을 경감하고 건강(잠재 임신능력)을 향상시켜 자연임심을 통한 출산율 증가 도모",
+    "department": "건강관리과",
+    "phone": "02-2133-9491",
+    "detail_id": "190",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=190"
+  },
+  {
+    "title": "서울아기 건강 첫걸음",
+    "description": "출산한 모든 임산부와 신생아 대상 4주 이내에 전문인력(전문교육을 이수한 영유아 건강관리 간호사 등)이 가정방문을 실시하고(보편방문), 임산부와 신생아에게 건강 위험요인이 있으면 신생아가 2세가 될 때 까지 25회(지속방문) 가정방문을 통하여 건강관리를 하는 사업",
+    "department": "건강관리과",
+    "phone": "02-2133-9485",
+    "detail_id": "183",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=183"
+  },
+  {
+    "title": "서울우먼업 프로젝트",
+    "description": "경력개발을 원하지만 임신, 출산, 육아 등으로 경제활동이 중단된 3040 여성의 재취업 및 경력복귀를 지원 (구직지원금, 인턴십, 고용장려금)",
+    "department": "양성평등담당관",
+    "phone": "02-2133-5333",
+    "detail_id": "120",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=120"
+  },
+  {
+    "title": "서울형 가사서비스 지원",
+    "description": "육아와 가사 노동에 지친 임산부·맞벌이·다자녀 가정에 가사서비스 포인트를 지급하여 집안일을 도와드리는 사업",
+    "department": "가족담당관",
+    "phone": "02-2133-6547",
+    "detail_id": "132",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=132"
+  },
+  {
+    "title": "서울형 긴급복지 지원",
+    "description": "갑작스러운 위기상황으로 인해 생계유지가 곤란한 저소득 위기가구에 생계비, 주거비, 의료비 등을 신속하게 제공하여 안정적 생활을 유지하도록 지원",
+    "department": "돌봄복지과",
+    "phone": "02-2133-7393",
+    "detail_id": "85",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=85"
+  },
+  {
+    "title": "서울형 산후조리경비 지원",
+    "description": "출산에 소요되는 경제적 부담을 경감하고, 출산 이후 산모의 건강권을 확보하기 위하여 산후조리경비를 지원",
+    "department": "저출생담당관",
+    "phone": "02-2133-5022",
+    "detail_id": "114",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=114"
+  },
+  {
+    "title": "선천성 대사이상 검사 및 환아 관리",
+    "description": "선천성 대사이상의 유무를 조기에 발견·치료함으로써 장애발생을 사전에 예방하여 영유아의 건강 증진을 도모 (검사비, 특수식이 및 의료비 지원)",
+    "department": "건강관리과",
+    "phone": "02-2133-9486",
+    "detail_id": "178",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=178"
+  },
+  {
+    "title": "아동수당 지원",
+    "description": "아동 양육에 따른 경제적 부담을 경감하고 건강한 성장 환경을 조성하기 위해 만 8세 미만 아동에게 수당 지급",
+    "department": "아동담당관",
+    "phone": "02-2133-5197",
+    "detail_id": "131",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=131"
+  },
+  {
+    "title": "아픈아이 병상돌봄·병원동행 서비스",
+    "description": "아이가 아플 때 시간을 내기 어려운 부모를 위해, 병원 동행 또는 돌봄 서비스를 제공",
+    "department": "아이돌봄담당관",
+    "phone": "02-2133-4818",
+    "detail_id": "124",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=124"
+  },
+  {
+    "title": "여성장애인 출산비용 지원",
+    "description": "여성장애인의 모성권 보호에 기여하고자, 출산 비용을 지원하는 서비스입니다.",
+    "department": "장애인자립지원과",
+    "phone": "02-2133-7439",
+    "detail_id": "55",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=55"
+  },
+  {
+    "title": "여성장애인 홈헬퍼 지원",
+    "description": "출산예정일 2달전까지 월30시간, 100일 이내 신생아 양육 월120시간, 만 9세 미만 아동 양육 월70시간 이내 파견",
+    "department": "장애인자립지원과",
+    "phone": "02-2133-7479",
+    "detail_id": "79",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=79"
+  },
+  {
+    "title": "여성청소년 생리용품 지원",
+    "description": "취약계층 여성청소년을 대상으로 생리용품 지원을 통해 여성 청소년의 건강한 성장을 지원",
+    "department": "청소년정책과",
+    "phone": "02-2133-4118",
+    "detail_id": "170",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=170"
+  },
+  {
+    "title": "의료 안심주택 지원",
+    "description": "노인과 환자 등 의료 취약계층을 위해 홀몸어르신, 노인가구, 만성질환관리제도 대상자 등 의료수요가 있으신 분들이 보다 편리하게 생활할 수 있도록 건설하고 공급하는 공공임대주택 지원",
+    "department": "전략주택공급과",
+    "phone": "02-2133-6291",
+    "detail_id": "192",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=192"
+  },
+  {
+    "title": "의료급여 수급권자 영유아 건강검진비 지원",
+    "description": "의료급여 수급권자 영유아 대상 연령별 건강검진을 통해 영유아의 성장·발달 사항을 추적 관리하고 건강 증진을 도모",
+    "department": "건강관리과",
+    "phone": "02-2133-9485",
+    "detail_id": "186",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=186"
+  },
+  {
+    "title": "의료급여 수급권자 일반 건강검진비 지원",
+    "description": "의료급여 수급권자를 대상으로 일반건강검진, 의료급여생애전환기검진을 제공하여 건강 증진을 도모",
+    "department": "건강관리과",
+    "phone": "02-2133-9485",
+    "detail_id": "185",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=185"
+  },
+  {
+    "title": "이주배경 청소년 지원",
+    "description": "국내로 이주해온 청소년들이 안정적으로 한국사회에 정착, 적응하여 건강한 사회구성원으로 성장할 수 있도록 지원합니다.",
+    "department": "평화기반조성과",
+    "phone": "02-2133-8673",
+    "detail_id": "224",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=224"
+  },
+  {
+    "title": "입양 숙려기간 모자지원",
+    "description": "미혼·이혼 한부모가 출산 전후 정서적으로 불안정한 상태로 입양에 동의하는 것을 방지하고 입양과 양육에 충분히 고려할 수 있도록 서비스 이용 비용 지원",
+    "department": "아동담당관",
+    "phone": "02-2133-5176",
+    "detail_id": "130",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=130"
+  },
+  {
+    "title": "장애부모아동의 언어발달지원사업",
+    "description": "감각적 장애 부모의 자녀에게 필요한 언어발달지원서비스를 제공하여 아동의 건강한 성장지원 및 장애가족의 자체 역량 강화",
+    "department": "장애인자립지원과",
+    "phone": "02-2133-7479",
+    "detail_id": "67",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=67"
+  },
+  {
+    "title": "장애아동 재활치료 바우처사업",
+    "description": "성장기 장애아동에게 적응행동 향상을 위한 발달재활서비스 제공",
+    "department": "장애인자립지원과",
+    "phone": "02-2133-7479",
+    "detail_id": "66",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=66"
+  },
+  {
+    "title": "장애인 의료비 지원",
+    "description": "생활이 어려운 저소득 장애인에게 의료비를 지원하여 생활안정 및 의료 보장",
+    "department": "장애인자립지원과",
+    "phone": "02-2133-7439",
+    "detail_id": "60",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=60"
+  },
+  {
+    "title": "장애입양아동 의료비 지원",
+    "description": "장애아동을 입양한 국내 입양가정에 의료비를 지원",
+    "department": "아동담당관",
+    "phone": "02-2133-5176",
+    "detail_id": "128",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=128"
+  },
+  {
+    "title": "장애친화 산부인과 운영",
+    "description": "여성장애인이 불편없이 의료서비스를 받을 수 있는 시설, 장비 및 인력을 갖추고 편의 및 의사소통 지원서비스를 제공하는 의료기관 운영",
+    "department": "건강관리과",
+    "phone": "02-2133-7586",
+    "detail_id": "105",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=105"
+  },
+  {
+    "title": "재가장기요양 서비스",
+    "description": "정신적, 신체적인 이유로 독립적인 일상생활을 수행하기 곤란한 노인과 노인부양가정에 필요한 각종 서비스를 제공함으로써, 노인이 가족 및 친지와 더불어 건강하고 안정된 노후 생활을 영위할 수 있도록 함과 동시에 노인부양으로 인한 가족의 부담을 덜어주기 위함",
+    "department": "어르신복지과",
+    "phone": "02-2133-7423",
+    "detail_id": "238",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=238"
+  },
+  {
+    "title": "저소득시민 부가급여",
+    "description": "기초생계, 의료급여 수급자 가구에 서울시에서 부가적으로 중고생교통비(분기별) 지원, 명절위문품비(설날,추석) 지원, 월동대책비(11월) 지원",
+    "department": "복지정책과",
+    "phone": "02-2133-7338",
+    "detail_id": "40",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=40"
+  },
+  {
+    "title": "전국민 마음투자 지원사업",
+    "description": "우울·불안 등 정서적 어려움이 있는 국민에게 전문적인 심리상담서비스를 제공하여 국민의 마음건강을 돌봄",
+    "department": "정신건강과",
+    "phone": "02-2133-7835",
+    "detail_id": "110",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=110"
+  },
+  {
+    "title": "정·난관 복원 시술비 지원",
+    "description": "영구피임시술(정관·난관 절제술 또는 결찰술)을 받은 자 중에서 임신·출산을 위해 정·난관 복원 시술을 받은 서울 시민에게 검사비 및 시술비 지원",
+    "department": "건강관리과",
+    "phone": "02-2133-9491",
+    "detail_id": "191",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=191"
+  },
+  {
+    "title": "청각장애인 인공달팽이관 수술지원",
+    "description": "청각장애인들의 원활한 언어 생활을 위해 청각장애인 인공달팽이관 수술 및 재활치료 지원",
+    "department": "장애인자립지원과",
+    "phone": "02-2133-7461",
+    "detail_id": "63",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=63"
+  },
+  {
+    "title": "청년부상제대군인 지원",
+    "description": "서울시는 군 복무 중 부상을 입고 제대한 청년부상제대군인의 건강한 삶과 공정한 사회 진출을 지원",
+    "department": "복지정책과",
+    "phone": "02-2133-7333",
+    "detail_id": "98",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=98"
+  },
+  {
+    "title": "청소년 산모 임신·출산 의료비 지원",
+    "description": "청소년 산모에게 임신 및 출산에 필요한 의료비를 지원하여 청소년 산모와 태아의 건강증진을 도모",
+    "department": "건강관리과",
+    "phone": "02-2133-9486",
+    "detail_id": "181",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=181"
+  },
+  {
+    "title": "청소년부모 아동양육비 지원",
+    "description": "미래를 준비해야 하는 청소년기에 임신·출산·양육을 경험하면서 자녀 양육·학업 부담·취업 준비 등으로 생활이 어려운 청소년부모 가정의 자녀 양육 부담을 덜기 위해 아동 양육비를 지원",
+    "department": "가족담당관",
+    "phone": "02-2133-6564",
+    "detail_id": "144",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=144"
+  },
+  {
+    "title": "학교 밖 청소년 지원",
+    "description": "학교 밖 청소년의 개인적 특성과 요구를 고려하여 학업 복귀나 사회 진입을 도와 건강한 사회구성원으로 성장할 수 있도록 지원",
+    "department": "청소년정책과",
+    "phone": "02-2133-4114",
+    "detail_id": "172",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=172"
+  },
+  {
+    "title": "희귀질환자 의료비 지원",
+    "description": "희귀질환자 중 저소득층 건강보험 가입자에게 본인부담금 등 의료비를 지원",
+    "department": "건강관리과",
+    "phone": "02-2133-9476",
+    "detail_id": "174",
+    "detail_url": "https://wis.seoul.go.kr/sec/ctg/categoryDetail.do?id=174"
+  }
+]

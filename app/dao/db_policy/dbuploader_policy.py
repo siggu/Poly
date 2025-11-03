@@ -7,12 +7,8 @@ import psycopg2
 from psycopg2.extras import execute_values
 from openai import OpenAI
 from dotenv import load_dotenv
+import app.dao.utils_db as utils_db
 
-# --------------------------------
-# 0. 유틸
-# --------------------------------
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
 
 # --------------------------------
 # 1. 인자 파서
@@ -45,6 +41,7 @@ def build_argparser():
     )
     return p
 
+
 # --------------------------------
 # 2. 환경 변수 로드
 # --------------------------------
@@ -53,27 +50,14 @@ DB_URL = os.getenv("DATABASE_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not DB_URL:
-    eprint("환경변수 DATABASE_URL이 필요합니다.")
+    utils_db.eprint("환경변수 DATABASE_URL이 필요합니다.")
     sys.exit(1)
 if not OPENAI_API_KEY:
-    eprint("환경변수 OPENAI_API_KEY가 필요합니다.")
+    utils_db.eprint("환경변수 OPENAI_API_KEY가 필요합니다.")
     sys.exit(1)
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --------------------------------
-# 3. 가중치 계산
-# --------------------------------
-def get_weight(region: str):
-    if not region:
-        return 1
-    region = region.strip()
-    if "전국" in region:
-        return 1
-    elif "서울" in region:
-        return 3
-    else:
-        return 5  # 구, 시, 도 단위
 
 # -------------------------------
 # 4. 전처리 함수
@@ -84,6 +68,7 @@ def preprocess_title(title: str) -> str:
         return ""
     no_space = title.replace(" ", "")
     return f"{title.strip()} {no_space}"
+
 
 # --------------------------------
 # 5. 임베딩 함수
@@ -97,6 +82,7 @@ def get_embedding(text: str, model: str):
     )
     return resp.data[0].embedding
 
+
 # --------------------------------
 # 6. 테이블 리셋
 # --------------------------------
@@ -108,6 +94,7 @@ def reset_tables(cur, mode: str):
     """
     if mode == "truncate":
         cur.execute("TRUNCATE TABLE embeddings, documents RESTART IDENTITY CASCADE;")
+
 
 # --------------------------------
 # 7. 메인 로직
@@ -121,14 +108,14 @@ def main():
     commit_every = max(1, args.commit_every)
 
     if not os.path.exists(json_path):
-        eprint(f"입력 파일을 찾을 수 없습니다: {json_path}")
+        utils_db.eprint(f"입력 파일을 찾을 수 없습니다: {json_path}")
         sys.exit(1)
 
     with open(json_path, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except json.JSONDecodeError as e:
-            eprint(f"JSON 파싱 오류: {e}")
+            utils_db.eprint(f"JSON 파싱 오류: {e}")
             sys.exit(1)
 
     # DB 연결
@@ -143,24 +130,26 @@ def main():
             print(f"✅ 테이블 리셋 완료: {reset_mode}")
 
         inserted = 0
+
         for idx, item in enumerate(data, 1):
             title = item.get("title", "")
             requirements = item.get("support_target", "")
             benefits = item.get("support_content", "")
             raw_text = item.get("raw_text", "")
             url = item.get("source_url", "")
-            region = item.get("region", "")
             policy_id = None
-            weight = get_weight(region)
+            region = item.get("region", "")
+            sitename = utils_db.extract_sitename_from_url(url)
+            weight = utils_db.get_weight(region, url) if hasattr(utils_db, "get_weight") else 0
 
-            # documents 삽입
+            # documents 삽입 (플레이스홀더 9개로 수정)
             cur.execute(
                 """
-                INSERT INTO documents (title, requirements, benefits, raw_text, url, policy_id, weight)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO documents (title, requirements, benefits, raw_text, url, policy_id, region, sitename, weight)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (title, requirements, benefits, raw_text, url, policy_id, weight)
+                (title, requirements, benefits, raw_text, url, policy_id, region, sitename, weight)
             )
             doc_id = cur.fetchone()[0]
 
@@ -176,9 +165,10 @@ def main():
             ):
                 vec = get_embedding(text_value, model_name)
                 if vec:
+                    # float 리스트 그대로 넣어 double precision[] 컬럼에 저장
                     emb_rows.append((doc_id, fname, vec))
 
-            # ✅ 버그 수정: 올바른 루프 변수 사용 & 일괄 삽입
+            # 일괄 삽입
             if emb_rows:
                 execute_values(
                     cur,
@@ -201,11 +191,12 @@ def main():
 
     except Exception as e:
         conn.rollback()
-        eprint(f"에러 발생으로 롤백했습니다: {e}")
+        utils_db.eprint(f"에러 발생으로 롤백했습니다: {e}")
         sys.exit(1)
     finally:
         cur.close()
         conn.close()
+
 
 if __name__ == "__main__":
     main()

@@ -48,6 +48,31 @@ def _reset_all_policy_ids(conn):
     with conn.cursor() as cur:
         cur.execute("UPDATE documents SET policy_id = NULL")
     conn.commit()
+# 1) 함수 보장 헬퍼 추가
+def _ensure_array_cosine_fn(conn, verbose=True):
+    sql = """
+    CREATE OR REPLACE FUNCTION array_cosine_similarity(a DOUBLE PRECISION[], b DOUBLE PRECISION[])
+    RETURNS DOUBLE PRECISION
+    LANGUAGE SQL
+    IMMUTABLE
+    STRICT
+    AS $$
+    SELECT CASE
+      WHEN a IS NULL OR b IS NULL THEN NULL
+      WHEN array_length(a,1) IS DISTINCT FROM array_length(b,1) THEN NULL
+      ELSE (
+        SELECT (SUM(a[i]*b[i])::DOUBLE PRECISION)
+               / NULLIF( sqrt(SUM(a[i]*a[i])) * sqrt(SUM(b[i]*b[i])) , 0)
+        FROM generate_subscripts(a,1) AS i
+      )
+    END
+    $$;
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql)
+    conn.commit()
+    if verbose:
+        print("[INIT] array_cosine_similarity() 보장 완료")
 
 
 def assign_policy_ids(
@@ -62,7 +87,7 @@ def assign_policy_ids(
     - '새 base'와의 유사도(sim_new)가 threshold 이상이고 기존 정책 sim_old보다 클 경우 policy_id 교체.
     - 임베딩 테이블/컬럼명은 전역 _EMB_TABLE, _EMB_COL 사용(ArgumentParser에서 세팅됨).
     """
-    assert 0.0 <= similarity_threshold <= 1.0
+
 
     load_dotenv()
     if os.getenv("RESET_ALL_POLICY_IDS_ON_START", "").lower() in ("1", "true", "t", "yes", "y"):
@@ -76,6 +101,7 @@ def assign_policy_ids(
     conn.autocommit = False
 
     try:
+        _ensure_array_cosine_fn(conn, verbose=verbose)
         with conn.cursor() as cur:
             _ensure_indexes(cur)
         conn.commit()
