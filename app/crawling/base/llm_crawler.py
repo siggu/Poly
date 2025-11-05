@@ -33,6 +33,12 @@ class HealthSupportInfo(BaseModel):
     )
     source_url: Optional[str] = Field(default=None, description="출처 URL")
     region: Optional[str] = Field(default=None, description="지역명 (예: 광진구, 전국)")
+    target_richness: Optional[int] = Field(
+        default=None, description="지원 대상 정보 풍부도 (0~5점)"
+    )
+    content_richness: Optional[int] = Field(
+        default=None, description="지원 내용 정보 풍부도 (0~5점)"
+    )
 
 
 # LLM 응답용 내부 모델 (2가지 케이스로 분리)
@@ -45,6 +51,8 @@ class _LLMResponseWithTitle(BaseModel):
         description="지원 대상 또는 신청/참가 자격을 간결히 요약"
     )
     support_content: str = Field(description="지원 내용/혜택/지원 항목을 핵심만 요약")
+    target_richness: int = Field(description="지원 대상 정보 풍부도 (0~5점)")
+    content_richness: int = Field(description="지원 내용 정보 풍부도 (0~5점)")
 
 
 # 2. (신규) 워크플로우에서 제목을 미리 알려주는 경우
@@ -55,6 +63,8 @@ class _LLMResponseNoTitle(BaseModel):
         description="지원 대상 또는 신청/참가 자격을 간결히 요약"
     )
     support_content: str = Field(description="지원 내용/혜택/지원 항목을 핵심만 요약")
+    target_richness: int = Field(description="지원 대상 정보 풍부도 (0~5점)")
+    content_richness: int = Field(description="지원 내용 정보 풍부도 (0~5점)")
 
 
 class LLMStructuredCrawler(BaseCrawler):
@@ -236,10 +246,11 @@ class LLMStructuredCrawler(BaseCrawler):
             # --- 'title'이 제공된 경우 (워크플로우에서 실행) ---
             system_prompt = f"""당신은 한국어 공고문을 구조적으로 요약하는 보조자 입니다.
 당신의 임무는 '{title}'(이)라는 사업에 대한 원문을 읽고, '지원 대상'과 '지원 내용'을 요약하는 것입니다.
+'지원 대상'과 '지원 내용'에 대해 요약한 다음 각 필드의 정보 풍부도를 0~5점으로 평가해 주세요. 평가 기준은 '지원 대상'과 '지원 내용'이 얼마나 구체적이고 상세하게 기술되어 있는지에 따라 결정됩니다.
 규칙:
 - 원문에 근거해 작성하고, 없으면 '정보 없음'으로 기재해 주세요.
 - 지원 대상과 지원 내용은 핵심만 요약해 주세요 (길어도 4~6줄 이내).
-- 포맷은 제공된 JSON 스키마에 맞춰 'support_target'와 'support_content'만 반환해 주세요."""
+- 포맷은 제공된 JSON 스키마에 맞춰 반환해 주세요."""
 
             user_prompt = f"""'{title}' 사업에 대한 원문입니다. '지원 대상'과 '지원 내용'을 추출해 주세요:
 ================ RAW TEXT ================
@@ -252,6 +263,7 @@ class LLMStructuredCrawler(BaseCrawler):
             # --- 'title'이 제공되지 않은 경우 (단독 실행) ---
             system_prompt = """너는 한국어 공고문을 구조적으로 요약하는 보조자 입니다.
 다음 원문에서 '제목', '지원 대상(자격)', '지원 내용'을 꼭 뽑아주세요.
+'지원 대상'과 '지원 내용'에 대해 요약한 다음 각 필드의 정보 풍부도를 0~5점으로 평가해 주세요.
 규칙:
 - 원문에 근거해 작성하고, 없으면 '정보 없음'으로 기재해 주세요.
 - 제목(title)은 원문에서 가장 중요한 사업명(H3, H4 등)을 1개만 정확히 추출합니다.
