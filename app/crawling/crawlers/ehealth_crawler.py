@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from base.base_crawler import BaseCrawler
 from base.llm_crawler import LLMStructuredCrawler
+from components.link_filter import LinkFilter
 
 
 class EHealthCrawler(BaseCrawler):
@@ -34,6 +35,7 @@ class EHealthCrawler(BaseCrawler):
         super().__init__()  # BaseCrawler 초기화
         self.output_dir = output_dir
         self.llm_crawler = LLMStructuredCrawler(model="gpt-4o-mini")
+        self.link_filter = LinkFilter()  # 키워드 필터링 컴포넌트
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -227,6 +229,36 @@ class EHealthCrawler(BaseCrawler):
 
         return all_links
 
+    def _filter_links_by_keywords(self, links: List[Dict]) -> List[Dict]:
+        """
+        키워드 기반 게시글 제목 필터링
+
+        Args:
+            links: 게시글 정보 리스트 [{"name": str, ...}, ...]
+
+        Returns:
+            필터링된 링크 목록
+        """
+        # district_crawler의 filter_by_keywords와 동일한 로직 사용
+        # links 형식을 link_filter가 받을 수 있도록 변환
+        links_to_filter = [{"name": link["name"], "url": link["url"]} for link in links]
+
+        # LinkFilter로 필터링
+        filtered_simple = self.link_filter.filter_by_keywords(
+            links_to_filter,
+            whitelist=config.KEYWORD_FILTER.get("whitelist"),
+            blacklist=config.KEYWORD_FILTER.get("blacklist"),
+            mode=config.KEYWORD_FILTER["mode"],
+        )
+
+        # 필터링된 URL 집합 생성
+        filtered_urls = {link["url"] for link in filtered_simple}
+
+        # 원본 links에서 필터링된 것만 반환 (전체 정보 유지)
+        filtered_links = [link for link in links if link["url"] in filtered_urls]
+
+        return filtered_links
+
     def crawl_and_structure_article(self, article_info: Dict) -> Optional[Dict]:
         """
         게시글 상세 페이지 크롤링 및 구조화
@@ -280,6 +312,18 @@ class EHealthCrawler(BaseCrawler):
             json.dump(links, f, ensure_ascii=False, indent=2)
         print(f"\n✓ 총 {len(links)}개 링크 수집 완료")
         print(f"✓ 링크 목록 저장: {links_file}")
+
+        # 1.5단계: 키워드 필터링 (config.KEYWORD_FILTER 사용)
+        if config.KEYWORD_FILTER["mode"] != "none":
+            print("\n[1.5단계] 키워드 기반 링크 필터링...")
+            print("-" * 80)
+            links = self._filter_links_by_keywords(links)
+
+            if not links:
+                print(
+                    "키워드 필터링 후 처리할 링크가 없습니다. 워크플로우를 종료합니다."
+                )
+                return
 
         # 2단계: 각 게시글 크롤링 및 구조화
         print("\n[2단계] 게시글 크롤링 및 구조화 중...")

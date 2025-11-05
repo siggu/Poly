@@ -15,7 +15,7 @@ sys.path.insert(0, project_root)
 
 try:
     # 이제 최상위 경로가 포함되었으므로, 절대 경로로 임포트합니다.
-    from app.interface.crawling.crawlers.district_crawler import DistrictCrawler
+    from app.interface.crawling.crawlers.district_crawler import HealthCareWorkflow
     from app.interface.crawling import utils
 except ImportError as e:
     print("=" * 80)
@@ -78,7 +78,7 @@ def run_batch_crawling():
             os.makedirs(output_dir_for_region, exist_ok=True)
 
             # 워크플로우 인스턴스 생성 및 실행
-            workflow = DistrictCrawler(
+            workflow = HealthCareWorkflow(
                 output_dir=output_dir_for_region, region=region_name
             )
             summary = workflow.run(start_url=url)
