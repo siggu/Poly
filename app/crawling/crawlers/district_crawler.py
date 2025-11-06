@@ -361,6 +361,18 @@ class DistrictCrawler(BaseCrawler):
                 print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
             except IOError as e:
                 print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
+        output_file = None
+        if save_json:
+            # 전체 구조화 데이터 저장
+            output_file = os.path.join(
+                self.output_dir, f"structured_data_{region_name}.json"
+            )
+            try:
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
+                print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
+            except IOError as e:
+                print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
 
         # 실패한 URL 저장
         failed_file = None

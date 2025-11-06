@@ -144,6 +144,9 @@ class LLMStructuredCrawler(BaseCrawler):
                 header_line = " | ".join(headers)
                 table_lines.append(header_line)
                 table_lines.append("-" * len(header_line))
+                header_line = " | ".join(headers)
+                table_lines.append(header_line)
+                table_lines.append("-" * len(header_line))
             for row in table.find_all("tr"):
                 cells = [
                     cell.get_text(strip=True)
@@ -425,6 +428,37 @@ class LLMStructuredCrawler(BaseCrawler):
             info.eval_target = int(round((2 * rt + 3 * ct) / 5))
             info.eval_content = int(round((2 * rc + 3 * cc) / 5))
 
+        # 점수 파싱(0~10) + 하한 보정 후 가중 합성(2:3)
+        try:
+            raw_scores = getattr(response_data, "scores", None)
+            if hasattr(raw_scores, "model_dump"):
+                scores_dict = raw_scores.model_dump()
+            elif isinstance(raw_scores, dict):
+                scores_dict = raw_scores
+            else:
+                scores_dict = {}
+
+            # 정수/범위 보정
+            for k in ["richness_target","richness_content","criterion_fit_target","criterion_fit_content"]:
+                v = int(scores_dict.get(k, 0) or 0)
+                scores_dict[k] = max(0, min(10, v))
+
+            # 원문+지원내용이 정량 정보를 실제 포함하면 약한 하한선 부여(0~10 스케일)
+            if self._contains_numeric_detail(out_content) and self._contains_numeric_detail(raw_text):
+                scores_dict["criterion_fit_content"] = max(scores_dict["criterion_fit_content"], 6)
+                scores_dict["richness_content"] = max(scores_dict["richness_content"], 5)
+
+            info.eval_scores = scores_dict  # 디버깅용(선택 저장)
+
+            rt = scores_dict["richness_target"]
+            rc = scores_dict["richness_content"]
+            ct = scores_dict["criterion_fit_target"]
+            cc = scores_dict["criterion_fit_content"]
+
+            # 가중치 2:3 → (2*richness + 3*criterion_fit)/5
+            info.eval_target = int(round((2*rt + 3*ct) / 5))
+            info.eval_content = int(round((2*rc + 3*cc) / 5))
+
         except Exception as e:
             print(f"⚠️ 점수 파싱/합성 에러: {e}")
             info.eval_scores = {
@@ -476,8 +510,7 @@ class LLMStructuredCrawler(BaseCrawler):
         print("\n" + "=" * 80)
         print(f"■ ID: {data.id}")
         print(f"■ 제목: {data.title}")
-        if data.region:
-            print(f"■ 지역: {data.region}")
+        if data.region: print(f"■ 지역: {data.region}")
         print("=" * 80)
         if data.support_target:
             print("\n■ 지원 대상(자격)")

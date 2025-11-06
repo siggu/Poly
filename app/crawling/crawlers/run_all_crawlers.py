@@ -7,6 +7,7 @@ import sys
 import traceback
 
 # 이 파일의 위치(app/crawling/crawlers)를 기준으로
+# 이 파일의 위치(app/crawling/crawlers)를 기준으로
 # 프로젝트 최상위 경로(HealthInformer)를 찾아 시스템 경로에 추가합니다.
 project_root = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")

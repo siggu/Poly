@@ -3,10 +3,8 @@
 # 중간 JSON 없이, 메모리에서 바로 documents/embeddings에 삽입
 # 진행률(%) 출력 + eval_scores/eval_overall 반영 + pgvector 안전삽입 버전
 
-import os
-import sys
-import argparse
-import traceback
+import os, sys, argparse, traceback
+from datetime import datetime
 import psycopg2
 from psycopg2.extras import execute_values, Json
 from openai import OpenAI
@@ -16,7 +14,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from app.crawling.crawlers.district_crawler import DistrictCrawler
+from app.crawling.crawlers.district_crawler import HealthCareWorkflow
 from app.crawling.crawlers.welfare_crawler import WelfareCrawler
 from app.crawling.crawlers.ehealth_crawler import EHealthCrawler
 from app.crawling.crawlers import run_all_crawlers as rac
@@ -41,33 +39,23 @@ def _ensure_dir(p: str):
 def collect_district(urls, out_dir):
     all_data = []
     for url in urls:
-        wf = DistrictCrawler(output_dir=out_dir)
-        summary = wf.run(
-            start_url=url, save_links=True, save_json=False, return_data=True
-        )
+        wf = HealthCareWorkflow(output_dir=out_dir)
+        summary = wf.run(start_url=url, save_links=True, save_json=False, return_data=True)
         all_data.extend(summary.get("data", []))
     return all_data
 
 
 def collect_welfare(out_dir, no_filter=False, max_items=None):
     crawler = WelfareCrawler(output_dir=out_dir)
-    data = crawler.run_workflow(
-        filter_health=not no_filter,
-        max_items=max_items,
-        return_data=True,
-        save_json=False,
-    )
+    data = crawler.run_workflow(filter_health=not no_filter, max_items=max_items,
+                                return_data=True, save_json=False)
     return data or []
 
 
 def collect_ehealth(out_dir, categories=None, max_pages=None):
     crawler = EHealthCrawler(output_dir=out_dir)
-    data = crawler.run_workflow(
-        categories=categories,
-        max_pages_per_category=max_pages,
-        return_data=True,
-        save_json=False,
-    )
+    data = crawler.run_workflow(categories=categories, max_pages_per_category=max_pages,
+                                return_data=True, save_json=False)
     return data or []
 
 
@@ -87,14 +75,11 @@ def ensure_documents_schema(conn):
     conn.commit()
 
 
-def ensure_embeddings_vector_schema(
-    conn, table="embeddings", col="embedding", dim=EMB_DIM
-):
+def ensure_embeddings_vector_schema(conn, table="embeddings", col="embedding", dim=EMB_DIM):
     """embeddings가 없으면 생성, 있으면 embedding을 VECTOR(dim)로 유지"""
     with conn.cursor() as cur:
         # 테이블 없으면 생성
-        cur.execute(
-            """
+        cur.execute("""
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -111,23 +96,17 @@ def ensure_embeddings_vector_schema(
                 CREATE INDEX IF NOT EXISTS idx_embeddings_doc_field ON embeddings (doc_id, field);
             END IF;
         END$$;
-        """,
-            (dim,),
-        )
+        """, (dim,))
         # 컬럼 타입이 벡터인지 확인
-        cur.execute(
-            """
+        cur.execute("""
             SELECT udt_name, data_type
             FROM information_schema.columns
             WHERE table_name=%s AND column_name=%s
-        """,
-            (table, col),
-        )
+        """, (table, col))
         r = cur.fetchone()
         # 기존에 배열 등으로 되어 있으면 벡터로 강제 변환
         if r and r[0] != "vector":
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 ALTER TABLE {table}
                 ALTER COLUMN {col} TYPE vector(%s)
                 USING (
@@ -136,9 +115,7 @@ def ensure_embeddings_vector_schema(
                       ELSE ( '[' || array_to_string({col}, ',') || ']' )::vector
                     END
                 );
-            """,
-                (dim,),
-            )
+            """, (dim,))
     conn.commit()
 
 
@@ -159,13 +136,10 @@ def build_vector_literal(vec, dim=EMB_DIM):
 # ─────────────────────────────────────────────
 # ... (상단 import/상수 동일)
 
-
 # ─────────────────────────────────────────────
 # DB 업로드 (진행률 % 표시 + eval_* 반영 + pgvector 안전삽입)
 # ─────────────────────────────────────────────
-def upload_records(
-    records, reset="none", emb_model="text-embedding-3-small", commit_every=50
-):
+def upload_records(records, reset="none", emb_model="text-embedding-3-small", commit_every=50):
     if not records:
         eprint("[upload] 업로드할 레코드가 없습니다.")
         return
@@ -190,36 +164,31 @@ def upload_records(
         # 스키마 보장 (documents에 eval_target/eval_content 추가 포함)
         ensure_pgvector(conn)
         ensure_documents_schema(conn)
-        ensure_embeddings_vector_schema(
-            conn, table="embeddings", col="embedding", dim=EMB_DIM
-        )
+        ensure_embeddings_vector_schema(conn, table="embeddings", col="embedding", dim=EMB_DIM)
 
         if reset != "none":
-            cur.execute(
-                "TRUNCATE TABLE embeddings, documents RESTART IDENTITY CASCADE;"
-            )
+            cur.execute("TRUNCATE TABLE embeddings, documents RESTART IDENTITY CASCADE;")
             conn.commit()
             print(f"✅ 테이블 리셋 완료: {reset}")
 
         inserted = 0
         for idx, item in enumerate(records, 1):
-            title = item.get("title", "")
-            requirements = item.get("support_target", "")
-            benefits = item.get("support_content", "")
-            raw_text = item.get("raw_text", "")
-            url = item.get("source_url", "")
-            region = item.get("region", "")
+            title = item.get("title","")
+            requirements = item.get("support_target","")
+            benefits = item.get("support_content","")
+            raw_text = item.get("raw_text","")
+            url = item.get("source_url","")
+            region = item.get("region","")
 
             # NEW: 0~10 원시점수 + 합성점수
-            eval_scores = item.get("eval_scores")
-            eval_target = item.get("eval_target")
+            eval_scores  = item.get("eval_scores")
+            eval_target  = item.get("eval_target")
             eval_content = item.get("eval_content")
 
             sitename = extract_sitename_from_url(url)
             weight = get_weight(region, sitename)
 
-            cur.execute(
-                """
+            cur.execute("""
                 INSERT INTO documents
                     (title, requirements, benefits, raw_text, url, policy_id,
                      region, sitename, weight, eval_scores, eval_target, eval_content,
@@ -229,33 +198,16 @@ def upload_records(
                      %s, %s, %s, %s, %s, %s,
                      %s, %s)
                 RETURNING id;
-            """,
-                (
-                    title,
-                    requirements,
-                    benefits,
-                    raw_text,
-                    url,
-                    None,
-                    region,
-                    sitename,
-                    weight,
-                    Json(eval_scores) if eval_scores is not None else None,
-                    eval_target,
-                    eval_content,
-                    False,
-                    None,
-                ),
-            )
+            """, (
+                title, requirements, benefits, raw_text, url, None,
+                region, sitename, weight, Json(eval_scores) if eval_scores is not None else None,
+                eval_target, eval_content, False, None
+            ))
             doc_id = cur.fetchone()[0]
 
             emb_rows = []
             title_emb_text = preprocess_title(title)
-            for fname, text_value in (
-                ("title", title_emb_text),
-                ("requirements", requirements),
-                ("benefits", benefits),
-            ):
+            for fname, text_value in (("title", title_emb_text), ("requirements", requirements), ("benefits", benefits)):
                 vec = get_embedding(text_value, emb_model)
                 if vec:
                     # pgvector 삽입(문자열 리터럴 → ::vector 캐스팅은 dbsetup의 보조함수로도 가능)
@@ -266,7 +218,7 @@ def upload_records(
                     cur,
                     "INSERT INTO embeddings (doc_id, field, embedding) VALUES %s",
                     emb_rows,
-                    template="(%s, %s, %s)",
+                    template="(%s, %s, %s)"
                 )
 
             inserted += 1
@@ -289,7 +241,6 @@ def upload_records(
     finally:
         cur.close()
         conn.close()
-
 
 # ─────────────────────────────────────────────
 # 그룹핑
@@ -321,27 +272,15 @@ def _get_runall_urls():
 # 메인
 # ─────────────────────────────────────────────
 def main():
-    p = argparse.ArgumentParser(
-        description="통합 크롤링 → DB 업로드 → policy_id 그루핑 (in-memory, 진행률 표시, eval_* 반영)"
-    )
-    p.add_argument(
-        "--source",
-        choices=["district", "welfare", "ehealth", "all"],
-        default="district",
-    )
+    p = argparse.ArgumentParser(description="통합 크롤링 → DB 업로드 → policy_id 그루핑 (in-memory, 진행률 표시, eval_* 반영)")
+    p.add_argument("--source", choices=["district", "welfare", "ehealth", "all"], default="district")
     p.add_argument("--urls", nargs="*", help="district 시작 URL들")
-    p.add_argument(
-        "--out-dir", default=os.path.join(PROJECT_ROOT, "app", "crawling", "output")
-    )
+    p.add_argument("--out-dir", default=os.path.join(PROJECT_ROOT, "app", "crawling", "output"))
     p.add_argument("--reset", choices=["none", "truncate"], default="none")
     p.add_argument("--group", action="store_true")
     p.add_argument("--threshold", type=float, default=0.85)
     p.add_argument("--batch-size", type=int, default=500)
-    p.add_argument(
-        "--use-runall-targets",
-        action="store_true",
-        help="district 수집 시 run_all_crawlers.py의 URL 목록 사용",
-    )
+    p.add_argument("--use-runall-targets", action="store_true", help="district 수집 시 run_all_crawlers.py의 URL 목록 사용")
     args = p.parse_args()
 
     _ensure_dir(args.out_dir)
@@ -353,9 +292,7 @@ def main():
             if args.use_runall_targets:
                 urls = _get_runall_urls()
                 if not urls:
-                    eprint(
-                        "[district] run_all_crawlers.py에서 URL을 찾지 못했어요. --urls 인자를 사용하세요."
-                    )
+                    eprint("[district] run_all_crawlers.py에서 URL을 찾지 못했어요. --urls 인자를 사용하세요.")
                     urls = args.urls or []
             else:
                 urls = args.urls or [
