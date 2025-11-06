@@ -1,11 +1,11 @@
 {
-  "user_id": "test01",
+  "user_id": "test",
   "user_info": {
-    "userId": "test01",
+    "userId": "test",
     "name": "",
     "gender": "남성",
-    "birthDate": "1988-01-14",
-    "location": "서울시 용산구",
+    "birthDate": "1990-01-01",
+    "location": "서울시 강남구",
     "healthInsurance": "직장",
     "incomeLevel": "50",
     "basicLivelihood": "없음"
