@@ -1,12 +1,12 @@
 ## 프론트 엔드 구조
-- stream_app/          # 프론트엔드 (Streamlit)
-- │   │   ├── app.py           # 메인 앱
-- │   │   ├── pages/           # 페이지
-- │   │   ├── src/             # 소스 코드
-- │   │   │   ├── widgets/     # UI 위젯
-- │   │   │   ├── utils/       # 유틸리티
-- │   │   ├── templates/       # HTML 템플릿(각 컴포넌트와 관련된 HTML)
-- │   │   └── styles/          # CSS 스타일
+ stream_app/          # 프론트엔드 (Streamlit)
+ │   │   ├── app.py           # 메인 앱
+ │   │   ├── pages/           # 페이지
+ │   │   ├── src/             # 소스 코드
+ │   │   │   ├── widgets/     # UI 위젯
+ │   │   │   ├── utils/       # 유틸리티
+ │   │   ├── templates/       # HTML 템플릿(각 컴포넌트와 관련된 HTML)
+ │   │   └── styles/          # CSS 스타일
 
 ## 아키텍처
 
