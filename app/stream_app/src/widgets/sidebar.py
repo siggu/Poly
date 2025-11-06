@@ -45,33 +45,33 @@ def render_sidebar():
     """좌측 사이드바 렌더링"""
     # CSS 로드
     load_css("components/sidebar.css")
-    
+
     with st.sidebar:
         # SIMPLECIRCLE 로고
         render_template("components/sidebar_logo.html")
-        
+
         # 검색 입력 필드
         st.text_input(
             "Q 대화 내용 검색...",
             key="sidebar_search_input",
             on_change=handle_search_update,
             placeholder="Q 대화 내용 검색...",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
-        
+
         st.markdown("---")
-        
+
         # 정책 추천 챗봇 카드
         render_template("components/chatbot_card.html")
-        
+
         st.markdown("---")
-        
+
         # 새 채팅 버튼
         if st.button("➕ 새 채팅", key="btn_new_chat", use_container_width=True):
             handle_new_chat()
-        
+
         st.markdown("---")
-        
+
         # 채팅 내역 (히스토리)
         st.markdown("#### 채팅 내역")
         if st.session_state.get("chat_history"):
@@ -79,15 +79,15 @@ def render_sidebar():
                 if st.button(
                     f"💬 {chat.get('title', f'채팅 {idx+1}')}",
                     key=f"chat_history_{idx}",
-                    use_container_width=True
+                    use_container_width=True,
                 ):
                     # 채팅 로드 로직 (필요시 구현)
                     st.info(f"채팅 {idx+1}을 불러옵니다.")
         else:
             st.caption("채팅 내역이 없습니다.")
-        
+
         st.markdown("---")
-        
+
         # 설정 버튼 (하단 고정)
         if st.button("⚙️ 설정", key="sidebar_settings", use_container_width=True):
             st.session_state["settings_modal_open"] = True
