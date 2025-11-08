@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from app.crawling.crawlers.district_crawler import HealthCareWorkflow
+from app.crawling.crawlers.district_crawler import DistrictCrawler
 from app.crawling.crawlers.welfare_crawler import WelfareCrawler
 from app.crawling.crawlers.ehealth_crawler import EHealthCrawler
 from app.crawling.crawlers import run_all_crawlers as rac
@@ -39,8 +39,8 @@ def _ensure_dir(p: str):
 def collect_district(urls, out_dir):
     all_data = []
     for url in urls:
-        wf = HealthCareWorkflow(output_dir=out_dir)
-        summary = wf.run(start_url=url, save_links=True, save_json=False, return_data=True)
+        crawler = DistrictCrawler(output_dir=out_dir)
+        summary = crawler.run(start_url=url, save_links=True, save_json=False, return_data=True)
         all_data.extend(summary.get("data", []))
     return all_data
 
