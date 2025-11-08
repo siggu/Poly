@@ -5,7 +5,6 @@
 
 import time
 from typing import List, Dict
-from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
@@ -15,6 +14,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 import utils
+from utils import extract_link_from_element
 from base.base_crawler import BaseCrawler
 
 
@@ -159,7 +159,7 @@ class LinkCollector(BaseCrawler):
         else:
             # sub_selector 없으면 main_links_elements가 최종 링크
             for link_element in main_links_elements:
-                link_info = self._extract_link_from_element(
+                link_info = extract_link_from_element(
                     link_element, base_url, seen_urls
                 )
                 if link_info:
@@ -205,7 +205,7 @@ class LinkCollector(BaseCrawler):
 
             # 링크 추출
             for link_element in sub_link_elements:
-                link_info = self._extract_link_from_element(
+                link_info = extract_link_from_element(
                     link_element, base_url, seen_urls
                 )
                 if link_info:
@@ -238,7 +238,7 @@ class LinkCollector(BaseCrawler):
             if filter_menu and filter_menu not in name:
                 continue
 
-            link_info = self._extract_link_from_element(
+            link_info = extract_link_from_element(
                 link_element, base_url, seen_urls
             )
             if link_info:
@@ -308,7 +308,7 @@ class LinkCollector(BaseCrawler):
         extracted_links = []
         seen_urls = set()
         for link_element in sub_link_elements:
-            link_info = self._extract_link_from_element(
+            link_info = extract_link_from_element(
                 link_element, base_url, seen_urls
             )
             if link_info:
@@ -316,35 +316,6 @@ class LinkCollector(BaseCrawler):
                 extracted_links.append(link_info)
 
         return extracted_links
-
-    def _extract_link_from_element(
-        self, link_element, base_url: str, seen_urls: set
-    ) -> dict:
-        """
-        링크 요소에서 URL과 이름을 추출하고 검증
-
-        Args:
-            link_element: BeautifulSoup 링크 요소
-            base_url: 기준 URL
-            seen_urls: 이미 수집된 URL 집합
-
-        Returns:
-            {"name": str, "url": str} 또는 None (무효한 링크인 경우)
-        """
-        name = link_element.get_text(strip=True)
-        href = link_element.get("href", "")
-
-        if not href:
-            return None
-
-        # 절대 URL로 변환
-        url = urljoin(base_url, href)
-
-        # 중복 확인
-        if url in seen_urls:
-            return None
-
-        return {"name": name, "url": url}
 
     def _deduplicate_links(self, links: List[Dict]) -> List[Dict]:
         """

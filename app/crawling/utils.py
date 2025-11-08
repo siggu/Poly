@@ -3,6 +3,7 @@
 """
 
 from urllib.parse import urlparse, urljoin, parse_qs
+from typing import Optional, Dict, Set
 
 
 def extract_region_from_url(url: str) -> str:
@@ -122,3 +123,33 @@ def make_absolute_url(url: str, base_url: str) -> str:
         return url
 
     return urljoin(base_url, url)
+
+
+def extract_link_from_element(
+    link_element, base_url: str, seen_urls: Optional[Set[str]] = None
+) -> Optional[Dict[str, str]]:
+    """
+    링크 요소에서 URL과 이름을 추출하고 검증
+
+    Args:
+        link_element: BeautifulSoup 링크 요소
+        base_url: 기준 URL
+        seen_urls: 이미 수집된 URL 집합 (None이면 중복 체크 안 함)
+
+    Returns:
+        {"name": str, "url": str} 또는 None (무효한 링크인 경우)
+    """
+    name = link_element.get_text(strip=True)
+    href = link_element.get("href", "")
+
+    if not href:
+        return None
+
+    # 절대 URL로 변환
+    url = urljoin(base_url, href)
+
+    # 중복 확인 (seen_urls가 제공된 경우에만)
+    if seen_urls is not None and url in seen_urls:
+        return None
+
+    return {"name": name, "url": url}

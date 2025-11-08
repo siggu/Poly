@@ -5,7 +5,6 @@
 
 from typing import List, Dict
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
 
 import sys
 import os
@@ -13,6 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 import utils
+from utils import extract_link_from_element
 
 
 class PageProcessor:
@@ -40,7 +40,7 @@ class PageProcessor:
             if tab_elements:
                 for tab_link_element in tab_elements:
                     # 탭의 경우 현재 페이지 URL을 base로 사용 (href="#" 처리 위해)
-                    link_info = self._extract_link_from_element(
+                    link_info = extract_link_from_element(
                         tab_link_element,
                         url,  # base_url 대신 전체 URL 사용
                         set(),  # 중복 검사는 나중에
@@ -89,32 +89,3 @@ class PageProcessor:
             return tab_links[0]["name"]
 
         return name
-
-    def _extract_link_from_element(
-        self, link_element, base_url: str, seen_urls: set
-    ) -> dict:
-        """
-        링크 요소에서 URL과 이름을 추출하고 검증
-
-        Args:
-            link_element: BeautifulSoup 링크 요소
-            base_url: 기준 URL
-            seen_urls: 이미 수집된 URL 집합
-
-        Returns:
-            {"name": str, "url": str} 또는 None (무효한 링크인 경우)
-        """
-        name = link_element.get_text(strip=True)
-        href = link_element.get("href", "")
-
-        if not href:
-            return None
-
-        # 절대 URL로 변환
-        url = urljoin(base_url, href)
-
-        # 중복 확인
-        if url in seen_urls:
-            return None
-
-        return {"name": name, "url": url}
