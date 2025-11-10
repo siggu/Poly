@@ -32,3 +32,5 @@ dist/
 
 # test examples
 .output_example/
+app/crawling/output/
+app/interface/

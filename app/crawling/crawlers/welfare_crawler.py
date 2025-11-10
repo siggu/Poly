@@ -21,28 +21,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from base.base_crawler import BaseCrawler
 from base.llm_crawler import LLMStructuredCrawler
+from components.link_filter import LinkFilter
 
 
 class WelfareCrawler(BaseCrawler):
     """서울시 복지포털 전용 크롤러"""
 
-    # 건강 관련 키워드 (필터링용)
-    HEALTH_KEYWORDS = [
-        "건강",
-        "의료",
-        "임산부",
-        "출산",
-        "산모",
-        "신생아",
-        "치료",
-        "진료",
-        "병원",
-        "보건",
-        "예방접종",
-        "검진",
-    ]
-
-    def __init__(self, output_dir: str = "app/interface/crawling/output"):
+    def __init__(self, output_dir: str = "app/crawling/output"):
         """
         Args:
             output_dir: 결과 저장 디렉토리
@@ -50,6 +35,7 @@ class WelfareCrawler(BaseCrawler):
         super().__init__()  # BaseCrawler 초기화
         self.output_dir = output_dir
         self.llm_crawler = LLMStructuredCrawler(model="gpt-4o-mini")
+        self.link_filter = LinkFilter()  # 키워드 필터링 컴포넌트
         self.base_url = "https://wis.seoul.go.kr"
         self.search_url = "https://wis.seoul.go.kr/sec/ctg/categorySearch.do"
 
@@ -62,7 +48,7 @@ class WelfareCrawler(BaseCrawler):
         Returns:
             복지 서비스 정보 리스트 [{'title': ..., 'description': ..., 'detail_id': ...}]
         """
-        print(f"\n복지포털에서 전체 서비스 목록 가져오는 중...")
+        print("\n복지포털에서 전체 서비스 목록 가져오는 중...")
 
         try:
             # GET 방식으로 페이지 요청
@@ -162,7 +148,7 @@ class WelfareCrawler(BaseCrawler):
 
     def filter_health_services(self, services: List[Dict]) -> List[Dict]:
         """
-        건강 관련 키워드로 서비스 필터링
+        건강 관련 키워드로 서비스 필터링 (config.KEYWORD_FILTER 사용)
 
         Args:
             services: 전체 서비스 리스트
@@ -170,15 +156,36 @@ class WelfareCrawler(BaseCrawler):
         Returns:
             필터링된 서비스 리스트
         """
+        if config.KEYWORD_FILTER["mode"] == "none":
+            return services
+
+        print(
+            f"\n[키워드 필터링] 총 {len(services)}개 서비스를 '{config.KEYWORD_FILTER['mode']}' 모드로 필터링 중..."
+        )
+
         filtered = []
+        excluded = []
 
         for service in services:
             combined_text = service["title"] + " " + service["description"]
-            if any(keyword in combined_text for keyword in self.HEALTH_KEYWORDS):
+
+            # LinkFilter의 check_keyword_filter 사용
+            passed, reason = self.link_filter.check_keyword_filter(
+                combined_text,
+                whitelist=config.KEYWORD_FILTER.get("whitelist"),
+                blacklist=config.KEYWORD_FILTER.get("blacklist"),
+                mode=config.KEYWORD_FILTER["mode"],
+            )
+
+            if passed:
                 filtered.append(service)
+                print(f"  ✓ [포함] {service['title']}")
+            else:
+                excluded.append({"title": service["title"], "reason": reason})
+                print(f"  ✗ [제외] {service['title']} - {reason}")
 
         print(
-            f"\n건강 관련 키워드로 필터링: {len(filtered)}개 (전체 {len(services)}개 중)"
+            f"\n[키워드 필터링 완료] {len(services)}개 중 {len(filtered)}개 서비스 선택됨 (제외: {len(excluded)}개)"
         )
         return filtered
 
@@ -212,6 +219,8 @@ class WelfareCrawler(BaseCrawler):
         filter_health: bool = True,
         max_items: int = None,
         output_filename: str = None,
+        return_data: bool = False,
+        save_json: bool = True,
     ):
         """
         전체 워크플로우 실행: 수집 → 필터링 → 크롤링 → 저장
@@ -256,7 +265,7 @@ class WelfareCrawler(BaseCrawler):
         print(f"✓ 링크 목록 저장: {links_file}")
 
         # 3단계: 각 서비스 크롤링 및 구조화
-        print(f"\n[3단계] 서비스 크롤링 및 구조화 중...")
+        print("\n[3단계] 서비스 크롤링 및 구조화 중...")
         print("-" * 80)
 
         all_results = []
@@ -283,13 +292,14 @@ class WelfareCrawler(BaseCrawler):
         print("\n[4단계] 결과 저장 중...")
         print("-" * 80)
 
-        if output_filename is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"welfare_structured_data_{timestamp}.json"
-
-        output_path = os.path.join(self.output_dir, output_filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(all_results, f, ensure_ascii=False, indent=2)
+        output_path = None
+        if save_json:
+            if output_filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"welfare_structured_data_{timestamp}.json"
+            output_path = os.path.join(self.output_dir, output_filename)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(all_results, f, ensure_ascii=False, indent=2)
 
         # 결과 요약
         print("\n" + "=" * 80)
@@ -300,8 +310,12 @@ class WelfareCrawler(BaseCrawler):
             print(f"✓ 필터링된 서비스: {len(services_to_process)}개")
         print(f"✓ 성공: {success_count}개")
         print(f"✗ 실패: {fail_count}개")
-        print(f"✓ 결과 파일: {output_path}")
+        if save_json:
+            print(f"✓ 결과 파일: {output_path}")
         print("=" * 80)
+
+        if return_data:
+            return all_results
 
 
 def main():
@@ -327,8 +341,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="app/interface/crawling/output",
-        help="출력 디렉토리 (기본값: app/interface/crawling/output)",
+        default="app/crawling/output",
+        help="출력 디렉토리 (기본값: app/crawling/output)",
     )
 
     args = parser.parse_args()

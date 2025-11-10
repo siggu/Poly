@@ -85,12 +85,18 @@ class BaseCrawler:
         Returns:
             BeautifulSoup 객체 또는 None (실패 시)
         """
+        import time
+        start_time = time.time()
+
         try:
             # 사이트별 특수 설정 적용
             verify_ssl = self._apply_site_specific_config(url)
 
+            # HTTP 요청 시간 측정
+            http_start = time.time()
             response = self.session.get(url, timeout=self.timeout, verify=verify_ssl)
             response.raise_for_status()
+            http_duration = time.time() - http_start
 
             # 인코딩 설정
             if response.apparent_encoding:
@@ -98,7 +104,23 @@ class BaseCrawler:
             else:
                 response.encoding = "utf-8"
 
-            return BeautifulSoup(response.text, "html.parser")
+            # HTML 파싱 시간 측정
+            parse_start = time.time()
+            soup = BeautifulSoup(response.text, "html.parser")
+            parse_duration = time.time() - parse_start
+
+            total_duration = time.time() - start_time
+
+            # 속도 통계에 기록
+            try:
+                from app.crawling import utils
+                utils.get_timing_stats().add_timing("1_HTTP요청", http_duration)
+                utils.get_timing_stats().add_timing("2_HTML파싱", parse_duration)
+                utils.get_timing_stats().add_timing("fetch_page_전체", total_duration)
+            except:
+                pass  # 통계 기록 실패해도 계속 진행
+
+            return soup
 
         except requests.RequestException as e:
             print(f"  [오류] 페이지 요청 실패: {url} - {e}")
