@@ -151,7 +151,7 @@ def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
         profile_data (Dict[str, Any]): 회원가입 데이터
             - userId, password
             - Profile 9개 항목: birthDate, gender, location, healthInsurance,
-              incomeLevel, basicLivelihood, disabilityLevel, longTermCare, pregnancyStatus
+            incomeLevel, basicLivelihood, disabilityLevel, longTermCare, pregnancyStatus
             - collectionData (선택): diseases, treatments, specialCases
 
     Returns:

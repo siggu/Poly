@@ -1,3 +1,4 @@
+"""ChatOpenAI 초기화 및 응답/스트리밍 11.10 수정"""
 import os
 from typing import List, Dict, Any, Optional
 

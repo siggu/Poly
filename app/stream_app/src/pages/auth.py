@@ -1,3 +1,5 @@
+"""로그인/회원가입 UI 및 상태 11.10 수정"""
+
 import datetime
 from typing import Dict, Any
 import streamlit as st

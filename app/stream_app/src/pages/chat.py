@@ -1,3 +1,4 @@
+"""채팅 렌더링/메시지 전송/정책 카드 파싱 11.10수정"""
 import uuid
 import time
 import json
