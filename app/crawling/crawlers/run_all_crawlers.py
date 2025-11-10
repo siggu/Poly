@@ -57,6 +57,9 @@ def run_batch_crawling():
     print(f"총 {len(target_urls)}개의 보건소에 대한 크롤링을 시작합니다.")
     print("=" * 80)
 
+    import time
+    batch_start_time = time.time()
+
     # 각 URL에 대해 워크플로우 실행
     for i, url in enumerate(target_urls, 1):
         try:
@@ -75,9 +78,11 @@ def run_batch_crawling():
             output_dir_for_region = os.path.join(base_output_dir, region_name)
             os.makedirs(output_dir_for_region, exist_ok=True)
 
-            # 워크플로우 인스턴스 생성 및 실행
+            # 워크플로우 인스턴스 생성 및 실행 (병렬 처리 활성화)
             workflow = DistrictCrawler(
-                output_dir=output_dir_for_region, region=region_name
+                output_dir=output_dir_for_region,
+                region=region_name,
+                max_workers=4  # 각 보건소 처리 시 4개 페이지를 병렬로 처리
             )
             summary = workflow.run(start_url=url)
 
@@ -95,7 +100,15 @@ def run_batch_crawling():
             traceback.print_exc()
             print("-" * 80)
 
+    batch_duration = time.time() - batch_start_time
+
+    print("\n" + "=" * 80)
     print("모든 보건소 크롤링 작업이 완료되었습니다.")
+    print(f"총 실행 시간: {batch_duration:.2f}초 ({batch_duration/60:.2f}분)")
+    print("=" * 80)
+
+    # 전체 통계 출력
+    utils.get_timing_stats().print_summary()
 
 
 if __name__ == "__main__":

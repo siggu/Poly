@@ -4,6 +4,9 @@
 
 from urllib.parse import urlparse, urljoin, parse_qs
 from typing import Optional, Dict, Set
+import time
+from functools import wraps
+from contextlib import contextmanager
 
 
 def extract_region_from_url(url: str) -> str:
@@ -153,3 +156,114 @@ def extract_link_from_element(
         return None
 
     return {"name": name, "url": url}
+
+
+# ============================================================
+# 속도 측정 유틸리티
+# ============================================================
+
+class TimingStats:
+    """속도 측정 통계를 저장하는 클래스"""
+    def __init__(self):
+        self.timings = {}
+
+    def add_timing(self, category: str, duration: float):
+        """특정 카테고리에 실행 시간 추가"""
+        if category not in self.timings:
+            self.timings[category] = []
+        self.timings[category].append(duration)
+
+    def get_stats(self, category: str) -> Dict:
+        """특정 카테고리의 통계 반환"""
+        if category not in self.timings or not self.timings[category]:
+            return {"count": 0, "total": 0, "avg": 0, "min": 0, "max": 0}
+
+        times = self.timings[category]
+        return {
+            "count": len(times),
+            "total": sum(times),
+            "avg": sum(times) / len(times),
+            "min": min(times),
+            "max": max(times)
+        }
+
+    def print_summary(self):
+        """전체 통계 요약 출력"""
+        print("\n" + "=" * 80)
+        print("⏱️  속도 측정 결과 요약")
+        print("=" * 80)
+
+        for category in sorted(self.timings.keys()):
+            stats = self.get_stats(category)
+            print(f"\n[{category}]")
+            print(f"  총 호출 횟수: {stats['count']}회")
+            print(f"  총 소요 시간: {stats['total']:.2f}초")
+            print(f"  평균 시간: {stats['avg']:.2f}초")
+            print(f"  최소 시간: {stats['min']:.2f}초")
+            print(f"  최대 시간: {stats['max']:.2f}초")
+
+        print("=" * 80)
+
+
+# 전역 통계 객체
+_global_timing_stats = TimingStats()
+
+
+def get_timing_stats() -> TimingStats:
+    """전역 통계 객체 반환"""
+    return _global_timing_stats
+
+
+@contextmanager
+def measure_time(category: str, description: str = None, verbose: bool = True):
+    """
+    코드 블록의 실행 시간을 측정하는 컨텍스트 매니저
+
+    사용 예:
+        with measure_time("HTTP요청", "페이지 가져오기"):
+            response = requests.get(url)
+
+    Args:
+        category: 측정 카테고리 (통계 집계용)
+        description: 출력할 설명 (None이면 출력 안 함)
+        verbose: 측정 결과를 즉시 출력할지 여부
+    """
+    start_time = time.time()
+
+    if description and verbose:
+        print(f"    [⏱️ START] {description}...", end="", flush=True)
+
+    try:
+        yield
+    finally:
+        duration = time.time() - start_time
+        _global_timing_stats.add_timing(category, duration)
+
+        if description and verbose:
+            print(f" 완료 ({duration:.2f}초)")
+
+
+def timing_decorator(category: str):
+    """
+    함수 실행 시간을 측정하는 데코레이터
+
+    사용 예:
+        @timing_decorator("LLM호출")
+        def call_llm_api():
+            ...
+
+    Args:
+        category: 측정 카테고리 (통계 집계용)
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                return result
+            finally:
+                duration = time.time() - start_time
+                _global_timing_stats.add_timing(category, duration)
+        return wrapper
+    return decorator

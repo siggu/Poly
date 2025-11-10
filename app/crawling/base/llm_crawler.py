@@ -306,6 +306,12 @@ class LLMStructuredCrawler(BaseCrawler):
             response_model = _LLMResponseWithTitle
 
         parsed_ok, raw_content = False, None
+
+        # LLM API 호출 시간 측정
+        import time
+
+        llm_start = time.time()
+
         if use_structured_output:
             completion = self.client.beta.chat.completions.parse(
                 model=self.model,
@@ -338,6 +344,17 @@ class LLMStructuredCrawler(BaseCrawler):
             except Exception:
                 parsed_ok = False
                 response_data = None
+
+        llm_duration = time.time() - llm_start
+
+        # 속도 통계에 기록
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+            import utils
+
+            utils.get_timing_stats().add_timing("3_LLM_API호출", llm_duration)
+        except:
+            pass  # 통계 기록 실패해도 계속 진행
 
         if not parsed_ok and raw_content:
             try:

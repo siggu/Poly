@@ -15,6 +15,8 @@ import os
 from datetime import datetime
 from typing import List, Dict
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # 공통 모듈 import
 import sys
@@ -32,15 +34,22 @@ from components.page_processor import PageProcessor
 class DistrictCrawler(BaseCrawler):
     """보건소 사이트 크롤링 및 구조화 워크플로우"""
 
-    def __init__(self, output_dir: str = "app/crawling/output", region: str = None):
+    def __init__(
+        self,
+        output_dir: str = "app/crawling/output",
+        region: str = None,
+        max_workers: int = 4,
+    ):
         """
         Args:
             output_dir: 결과 저장 디렉토리
             region: 지역명 (예: "동작구"). None이면 URL에서 자동 추출 시도
+            max_workers: 병렬 처리 워커 수 (기본값: 4)
         """
         super().__init__()  # BaseCrawler 초기화
         self.output_dir = output_dir
         self.region = region
+        self.max_workers = max_workers
 
         # 컴포넌트 초기화
         self.link_collector = LinkCollector()
@@ -53,6 +62,9 @@ class DistrictCrawler(BaseCrawler):
 
         # 탭 제외 로그 중복 방지용 (URL 기준으로 추적)
         self.excluded_tab_urls = set()
+
+        # 병렬 처리를 위한 thread-safe lock
+        self.lock = threading.Lock()
 
     def run(
         self,
@@ -78,6 +90,8 @@ class DistrictCrawler(BaseCrawler):
         print("=" * 80)
         print("보건소 사이트 크롤링 워크플로우 시작")
         print("=" * 80)
+
+        workflow_start_time = time.time()
 
         if crawl_rules is None:
             crawl_rules = config.CRAWL_RULES
@@ -111,10 +125,17 @@ class DistrictCrawler(BaseCrawler):
             return_data,
         )
 
+        workflow_duration = time.time() - workflow_start_time
+        utils.get_timing_stats().add_timing("6_워크플로우_전체", workflow_duration)
+
         # 최종 요약 출력
         self._print_summary(
             initial_links, processed_count, structured_data_list, failed_urls
         )
+
+        # 속도 통계 출력
+        print("\n")
+        utils.get_timing_stats().print_summary()
 
         return summary
 
@@ -167,12 +188,13 @@ class DistrictCrawler(BaseCrawler):
         self, initial_links: List[Dict], enable_keyword_filter: bool
     ) -> tuple:
         """
-        모든 페이지 처리 (탭 포함)
+        모든 페이지 병렬 처리 (탭 포함)
 
         Returns:
             (structured_data_list, failed_urls, processed_count) 튜플
         """
-        print("\n[2단계] 페이지 처리 및 LLM 구조화 (탭 포함)...")
+        print("\n[2단계] 페이지 처리 및 LLM 구조화 (병렬 처리, 탭 포함)...")
+        print(f"  - 병렬 워커 수: {self.max_workers}")
         print("-" * 80)
 
         structured_data_list = []
@@ -181,37 +203,116 @@ class DistrictCrawler(BaseCrawler):
         processed_or_queued_urls = [link["url"] for link in initial_links]
         processed_count = 0
 
-        while links_to_process:
-            link_info = links_to_process.pop(0)
-            processed_count += 1
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Future 객체를 저장할 딕셔너리
+            future_to_link = {}
 
-            # 단일 페이지 처리
-            success, structured_data, tab_links = self._process_single_page(
-                link_info, processed_count, len(processed_or_queued_urls)
-            )
+            # 초기 링크들을 제출
+            for link_info in links_to_process[: self.max_workers]:
+                future = executor.submit(
+                    self._process_single_page_wrapper,
+                    link_info,
+                    processed_count + 1,
+                    len(processed_or_queued_urls),
+                )
+                future_to_link[future] = link_info
+                processed_count += 1
 
-            if success:
-                structured_data_list.append(structured_data.model_dump())
+            # 이미 제출된 링크는 큐에서 제거
+            links_to_process = links_to_process[self.max_workers :]
 
-                # 탭 링크 처리
-                if tab_links:
-                    newly_added = self._add_tab_links_to_queue(
-                        tab_links,
-                        links_to_process,
-                        processed_or_queued_urls,
-                        enable_keyword_filter,
-                    )
-            else:
-                # 실패 기록
-                failed_urls.append(structured_data)  # structured_data는 에러 딕셔너리
+            # Future 완료될 때마다 처리
+            while future_to_link:
+                for future in as_completed(future_to_link):
+                    link_info = future_to_link.pop(future)
+
+                    try:
+                        success, structured_data, tab_links = future.result()
+
+                        if success:
+                            with self.lock:
+                                structured_data_list.append(
+                                    structured_data.model_dump()
+                                )
+
+                            # 탭 링크 처리
+                            if tab_links:
+                                with self.lock:
+                                    newly_added = self._add_tab_links_to_queue(
+                                        tab_links,
+                                        links_to_process,
+                                        processed_or_queued_urls,
+                                        enable_keyword_filter,
+                                    )
+                        else:
+                            # 실패 기록
+                            with self.lock:
+                                failed_urls.append(structured_data)
+
+                    except Exception as e:
+                        print(f"  [ERROR] Future 처리 중 오류: {e}")
+                        import traceback
+
+                        traceback.print_exc()
+
+                    # 큐에 남은 링크가 있으면 새 작업 제출
+                    if links_to_process:
+                        next_link = links_to_process.pop(0)
+                        processed_count += 1
+                        new_future = executor.submit(
+                            self._process_single_page_wrapper,
+                            next_link,
+                            processed_count,
+                            len(processed_or_queued_urls),
+                        )
+                        future_to_link[new_future] = next_link
 
         return structured_data_list, failed_urls, processed_count
 
-    def _process_single_page(
+    def _process_single_page_wrapper(
         self, link_info: Dict, processed_count: int, total_estimate: int
     ) -> tuple:
         """
-        단일 페이지 처리
+        _process_single_page의 thread-safe 래퍼
+        병렬 처리 시 출력이 섞이지 않도록 로그를 버퍼에 모았다가 한 번에 출력
+        """
+        # 로그 버퍼 생성
+        log_buffer = []
+
+        url = link_info["url"]
+        name = link_info["name"]
+
+        # 시작 로그
+        log_buffer.append(f"\n[{processed_count}/{total_estimate}*] 처리 시도: {name}")
+        log_buffer.append(f"  URL: {url}")
+
+        # 실제 처리 (로그 버퍼 전달)
+        success, result, tab_links = self._process_single_page(
+            link_info, processed_count, total_estimate, log_buffer
+        )
+
+        # 완료 후 한 번에 출력 (lock 사용)
+        with self.lock:
+            for log_line in log_buffer:
+                print(log_line)
+
+        return success, result, tab_links
+
+    def _process_single_page(
+        self,
+        link_info: Dict,
+        processed_count: int,
+        total_estimate: int,
+        log_buffer: list,
+    ) -> tuple:
+        """
+        단일 페이지 처리 (실제 작업 수행)
+
+        Args:
+            link_info: 링크 정보
+            processed_count: 처리 순번
+            total_estimate: 전체 추정 개수
+            log_buffer: 로그 메시지를 저장할 리스트
 
         Returns:
             (success, structured_data_or_error, tab_links) 튜플
@@ -219,13 +320,15 @@ class DistrictCrawler(BaseCrawler):
         url = link_info["url"]
         name = link_info["name"]
 
-        print(f"\n[{processed_count}/{total_estimate}*] 처리 시도: {name}")
-        print(f"  URL: {url}")
-        time.sleep(1)
+        # time.sleep 시간 측정 (개선 포인트 확인용)
+        sleep_start = time.time()
+        time.sleep(0.2)
+        sleep_duration = time.time() - sleep_start
+        utils.get_timing_stats().add_timing("4_Sleep대기", sleep_duration)
+
+        page_start_time = time.time()
 
         try:
-            print("    [디버그] >> 처리 시작")
-
             # 1. 페이지 가져오기
             soup = self.llm_crawler.fetch_page(url)
             if not soup:
@@ -240,19 +343,21 @@ class DistrictCrawler(BaseCrawler):
             )
 
             # 4. LLM 구조화
-            print("    -> 내용 구조화 진행...")
+            log_buffer.append("    -> 내용 구조화 진행...")
+
             region = self.region or utils.extract_region_from_url(url)
             structured_data = self.llm_crawler.crawl_and_structure(
                 url=url, region=region, title=title_for_llm
             )
 
-            print("  [SUCCESS] 성공")
-            print("    [디버그] >> 처리 완료")
+            page_duration = time.time() - page_start_time
+            utils.get_timing_stats().add_timing("5_페이지처리_전체", page_duration)
+
+            log_buffer.append(f"  [SUCCESS] 성공 (소요: {page_duration:.2f}초)")
 
             return True, structured_data, tab_links
 
         except Exception as e:
-            print(f"  [ERROR] 실패: {e}")
             import traceback
 
             error_details = traceback.format_exc()
@@ -262,7 +367,9 @@ class DistrictCrawler(BaseCrawler):
                 "error": str(e),
                 "details": error_details,
             }
-            print(f"  오류 상세:\n{error_details}")
+
+            log_buffer.append(f"  [ERROR] 실패: {e}")
+            log_buffer.append(f"  오류 상세:\n{error_details}")
 
             return False, error_info, []
 
@@ -443,6 +550,12 @@ def main():
         action="store_true",
         help="키워드 기반 링크 필터링 비활성화",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help="병렬 처리 워커 수 (기본값: 4, 권장: 2~8)",
+    )
 
     args = parser.parse_args()
 
@@ -471,7 +584,9 @@ def main():
     output_dir = os.path.join(args.output_dir, region_name)
 
     # 워크플로우 실행
-    workflow = DistrictCrawler(output_dir=output_dir, region=region_name)
+    workflow = DistrictCrawler(
+        output_dir=output_dir, region=region_name, max_workers=args.max_workers
+    )
 
     try:
         summary = workflow.run(

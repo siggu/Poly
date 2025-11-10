@@ -305,6 +305,9 @@ KEYWORD_FILTER = {
         "캠페인",
         "건강도시",
         "조사",
+        "대여",
+        "신고",
+        "등록",
     ],
     "mode": "blacklist",  # "whitelist", "blacklist", "both", "none"
 }
