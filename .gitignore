@@ -9,7 +9,7 @@ __pycache__/
 
 # Environments
 .env
-venv/
+venv/g
 ENV/
 .env.local
 .env.prod
@@ -29,3 +29,8 @@ build/
 dist/
 *.egg-info/
 .venv
+
+# test examples
+.output_example/
+app/crawling/output/
+app/interface/
