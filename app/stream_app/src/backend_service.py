@@ -95,7 +95,9 @@ def api_login(user_id: str, password: str) -> Tuple[bool, str]:
         # 현재 get_user_by_id는 비밀번호를 반환하지 않으므로, 별도 함수가 필요합니다.
         # 여기서는 임시로 get_user_by_id가 비밀번호 해시를 포함한다고 가정합니다.
         # 실제로는 get_user_password_hash(user_id) 같은 함수를 만들어야 합니다.
-        hashed_password = user_info.get("password_hash")  # 'password_hash'는 예시입니다.
+        hashed_password = user_info.get(
+            "password_hash"
+        )  # 'password_hash'는 예시입니다.
 
         if not hashed_password or not verify_password(password, hashed_password):
             logger.warning(f"비밀번호 불일치: {user_id}")
@@ -107,6 +109,7 @@ def api_login(user_id: str, password: str) -> Tuple[bool, str]:
     except Exception as e:
         logger.error(f"로그인 중 오류: {str(e)}")
         return False, "로그인 처리 중 오류가 발생했습니다"
+
 
 def get_user_password_hash(user_id: str) -> Optional[str]:
     """DB에서 사용자의 비밀번호 해시를 조회합니다."""
@@ -128,6 +131,7 @@ def get_user_password_hash(user_id: str) -> Optional[str]:
         if conn:
             conn.close()
 
+
 def api_login(user_id: str, password: str) -> Tuple[bool, str]:
     """로그인 (DB 직접 조회)"""
     try:
@@ -146,6 +150,7 @@ def api_login(user_id: str, password: str) -> Tuple[bool, str]:
     except Exception as e:
         logger.error(f"로그인 중 오류: {str(e)}")
         return False, "로그인 처리 중 오류가 발생했습니다"
+
 
 def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
     """

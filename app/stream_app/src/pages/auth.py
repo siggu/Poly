@@ -13,8 +13,7 @@ from src.db.database import (
 )
 
 # 백엔드 API 호출 함수 (로그인 등은 여전히 사용)
-from src.backend_service import (
-    api_login,
+from src.backend_service import (  # api_login은 더 이상 사용하지 않음
     api_get_profiles,
     api_save_profiles,
 )
@@ -105,6 +104,24 @@ def initialize_auth_state():
 # ==============================================================================
 
 
+def handle_login(user_id: str, password: str) -> Tuple[bool, str]:
+    """사용자 로그인 처리 (DB 직접 조회)"""
+    # 1. DB에서 사용자 ID로 비밀번호 해시 조회
+    stored_hash = get_user_password_hash(user_id)
+    if not stored_hash:
+        return False, "아이디 또는 비밀번호가 올바르지 않습니다."
+
+    # 2. passlib.bcrypt를 사용하여 입력된 비밀번호와 저장된 해시 검증
+    try:
+        is_verified = bcrypt.verify(password, stored_hash)
+        if not is_verified:
+            return False, "아이디 또는 비밀번호가 올바르지 않습니다."
+    except Exception:
+        return False, "비밀번호 검증 중 오류가 발생했습니다. 관리자에게 문의하세요."
+
+    return True, "로그인 성공"
+
+
 def render_login_tab():
     data = st.session_state["login_data"]
     error_msg = st.session_state["auth_error"].get("login", "")
@@ -128,8 +145,8 @@ def render_login_tab():
             ] = "아이디와 비밀번호를 입력해주세요."
             st.rerun()
 
-        # 로그인 처리 (기존 api_login 사용, 비밀번호는 별도 테이블에서 관리)
-        success, message = api_login(data["userId"], data["password"])
+        # ✅ [수정] DB 직접 조회 방식으로 로그인 처리
+        success, message = handle_login(data["userId"], data["password"])
         if success:
             st.session_state["is_logged_in"] = True
             st.session_state["show_login_modal"] = False
