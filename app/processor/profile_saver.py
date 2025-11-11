@@ -192,38 +192,52 @@ def extract_profile_fields(input_text: str) -> ProfilePayload:
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) 업서트 (명시된 값만 갱신; null은 유지)
 # ─────────────────────────────────────────────────────────────────────────────
-UPSERT_SQL = """
-INSERT INTO core_profile AS cp (
-  user_id, birth_date, residency_sgg_code, insurance_type, median_income_ratio,
-  basic_benefit_type, disability_grade, ltci_grade, pregnant_or_postpartum12m, updated_at
+SELECT_PROFILE_SQL = """
+SELECT id
+FROM profiles
+WHERE user_id = %(user_id)s
+ORDER BY updated_at DESC NULLS LAST, id DESC
+LIMIT 1;
+"""
+
+INSERT_PROFILE_SQL = """
+INSERT INTO profiles (
+  user_id, birth_date, sex, residency_sgg_code, insurance_type,
+  median_income_ratio, basic_benefit_type, disability_grade,
+  ltci_grade, pregnant_or_postpartum12m, updated_at
 ) VALUES (
-  %(user_id)s, %(birth_date)s, %(residency_sgg_code)s, %(insurance_type)s, %(median_income_ratio)s,
-  %(basic_benefit_type)s, %(disability_grade)s, %(ltci_grade)s, %(pregnant_or_postpartum12m)s, now()
+  %(user_id)s, %(birth_date)s, %(sex)s, %(residency_sgg_code)s, %(insurance_type)s,
+  %(median_income_ratio)s, %(basic_benefit_type)s, %(disability_grade)s,
+  %(ltci_grade)s, %(pregnant_or_postpartum12m)s, now()
 )
-ON CONFLICT (user_id) DO UPDATE SET
-  birth_date = COALESCE(EXCLUDED.birth_date, cp.birth_date),
-  residency_sgg_code = COALESCE(EXCLUDED.residency_sgg_code, cp.residency_sgg_code),
-  insurance_type = COALESCE(EXCLUDED.insurance_type, cp.insurance_type),
-  median_income_ratio = COALESCE(EXCLUDED.median_income_ratio, cp.median_income_ratio),
-  basic_benefit_type = COALESCE(EXCLUDED.basic_benefit_type, cp.basic_benefit_type),
-  disability_grade = COALESCE(EXCLUDED.disability_grade, cp.disability_grade),
-  ltci_grade = COALESCE(EXCLUDED.ltci_grade, cp.ltci_grade),
-  pregnant_or_postpartum12m = COALESCE(EXCLUDED.pregnant_or_postpartum12m, cp.pregnant_or_postpartum12m),
-  updated_at = now();
+RETURNING id;
+"""
+
+UPDATE_PROFILE_SQL = """
+UPDATE profiles
+SET
+  birth_date = COALESCE(%(birth_date)s, birth_date),
+  sex = COALESCE(%(sex)s, sex),
+  residency_sgg_code = COALESCE(%(residency_sgg_code)s, residency_sgg_code),
+  insurance_type = COALESCE(%(insurance_type)s, insurance_type),
+  median_income_ratio = COALESCE(%(median_income_ratio)s, median_income_ratio),
+  basic_benefit_type = COALESCE(%(basic_benefit_type)s, basic_benefit_type),
+  disability_grade = COALESCE(%(disability_grade)s, disability_grade),
+  ltci_grade = COALESCE(%(ltci_grade)s, ltci_grade),
+  pregnant_or_postpartum12m = COALESCE(%(pregnant_or_postpartum12m)s, pregnant_or_postpartum12m),
+  updated_at = now()
+WHERE id = %(id)s
+RETURNING id;
 """
 
 def upsert_profile(user_id: str, payload: ProfilePayload) -> Dict[str, Any]:
-    """
-    null 값은 기존 값 유지. (COALESCE)
-    반환: {"updated": True/False, "applied": {필드:값...}}
-    """
     if not DB_URL:
         raise RuntimeError("DATABASE_URL is not set")
 
-    # psycopg는 None을 SQL NULL로 처리
     params = {
         "user_id": user_id,
         "birth_date": payload.birth_date,
+        "sex": payload.sex,
         "residency_sgg_code": payload.residency_sgg_code,
         "insurance_type": payload.insurance_type,
         "median_income_ratio": payload.median_income_ratio,
@@ -233,15 +247,20 @@ def upsert_profile(user_id: str, payload: ProfilePayload) -> Dict[str, Any]:
         "pregnant_or_postpartum12m": payload.pregnant_or_postpartum12m,
     }
 
-    # 업데이트가 실제 발생했는지 판단하기 위해, upsert 전후 row를 비교하는 방법이 가장 정확하나
-    # 단순화를 위해 여기서는 실행 성공 시 updated=True로 둔다.
     with psycopg.connect(DB_URL, autocommit=True) as conn:
         with conn.cursor() as cur:
-            cur.execute(UPSERT_SQL, params)
+            cur.execute(SELECT_PROFILE_SQL, {"user_id": user_id})
+            row = cur.fetchone()
+            if row is None:
+                cur.execute(INSERT_PROFILE_SQL, params)
+                profile_id = cur.fetchone()[0]
+            else:
+                profile_id = row[0]
+                cur.execute(UPDATE_PROFILE_SQL, {**params, "id": profile_id})
+                profile_id = cur.fetchone()[0]
 
-    applied = {k: v for k, v in params.items() if k != "user_id" and v is not None}
-    return {"updated": True if applied else False, "applied": applied}
-
+    applied = {k: v for k, v in params.items() if k not in {"user_id"} and v is not None}
+    return {"updated": True if applied else False, "applied": applied, "profile_id": profile_id}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5) LangGraph 노드 인터페이스
@@ -278,9 +297,13 @@ def profile_saver_node(state: State) -> State:
         state["profile_delta"] = {"error": f"upsert_failed: {type(e).__name__}", "detail": str(e)}
         return state
 
+    result = upsert_profile(user_id, payload)
     state["profile_delta"] = payload.model_dump()
     pr = state.get("persist_result") or {}
-    pr.update({"profile_upserted": bool(result.get("updated")), "profile_applied": result.get("applied")})
+    pr.update({
+        "profile_upserted": bool(result.get("updated")),
+        "profile_id": result.get("profile_id"),
+    })
     state["persist_result"] = pr
     return state
 

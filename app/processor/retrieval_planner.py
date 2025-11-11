@@ -65,14 +65,17 @@ def extract_keywords(text: str, max_k: int = 6) -> List[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # DB 조회: PROFILE
 # ─────────────────────────────────────────────────────────────────────────────
+# === PROFILE_SQL 교체 ===
 PROFILE_SQL = """
-SELECT user_id, birth_date, sex, residency_sgg_code, insurance_type,
+SELECT id, user_id, birth_date, sex, residency_sgg_code, insurance_type,
        median_income_ratio, basic_benefit_type, disability_grade,
        ltci_grade, pregnant_or_postpartum12m, updated_at
-FROM core_profile
+FROM profiles
 WHERE user_id = %(user_id)s
+ORDER BY updated_at DESC NULLS LAST, id DESC
 LIMIT 1;
 """
+
 
 def _calc_age(birth_date: Optional[date]) -> Optional[int]:
     if not birth_date:
@@ -91,7 +94,7 @@ def fetch_profile_context(user_id: str) -> Optional[Dict[str, Any]]:
             row = cur.fetchone()
             if not row:
                 return None
-            (uid, birth_date, sex, sgg, ins, mir, basic, disab, ltci, preg, updated_at) = row
+            (pid, uid, birth_date, sex, sgg, ins, mir, basic, disab, ltci, preg, updated_at) = row
             age = _calc_age(birth_date)
             # 요약 텍스트(룰 엔진 또는 Answer LLM 힌트로 사용)
             summary = []
@@ -111,6 +114,7 @@ def fetch_profile_context(user_id: str) -> Optional[Dict[str, Any]]:
             if preg is True:
                 summary.append("임신/출산 12개월 이내")
             profile_ctx = {
+                "profile_id": pid,
                 "user_id": uid,
                 "age": age,
                 "birth_date": birth_date.isoformat() if birth_date else None,
@@ -130,11 +134,12 @@ def fetch_profile_context(user_id: str) -> Optional[Dict[str, Any]]:
 # ─────────────────────────────────────────────────────────────────────────────
 # DB 조회: COLLECTION (키워드 기반 ILIKE ANY)
 # ─────────────────────────────────────────────────────────────────────────────
+# === 컬렉션 SQL: triples → collections, profile_id 사용 ===
 COLLECTION_BY_KEYWORDS_SQL = """
-SELECT id, user_id, subject, predicate, object, code_system, code,
+SELECT id, profile_id, subject, predicate, object, code_system, code,
        onset_date, end_date, negation, confidence, source_id, created_at
-FROM triples
-WHERE user_id = %(user_id)s
+FROM collections
+WHERE profile_id = %(profile_id)s
   AND (
         object ILIKE ANY(%(patterns)s)
         OR predicate = ANY(%(preds)s)
@@ -145,10 +150,10 @@ LIMIT %(limit)s;
 """
 
 COLLECTION_RECENT_SQL = """
-SELECT id, user_id, subject, predicate, object, code_system, code,
+SELECT id, profile_id, subject, predicate, object, code_system, code,
        onset_date, end_date, negation, confidence, source_id, created_at
-FROM triples
-WHERE user_id = %(user_id)s
+FROM collections
+WHERE profile_id = %(profile_id)s
 ORDER BY created_at DESC
 LIMIT %(limit)s;
 """
@@ -170,37 +175,38 @@ PRED_KEYWORDS = {
     "실직": "FINANCIAL_SHOCK",
 }
 
+# === fetch_collection_context(): profile_id 해석 후 사용 ===
 def fetch_collection_context(user_id: str, query_text: Optional[str], limit: int = 12) -> List[Dict[str, Any]]:
-    keywords = extract_keywords(query_text or "", max_k=6)
-    # ILIKE 패턴 배열 만들기
-    patterns = [f"%{kw}%" for kw in keywords] if keywords else []
-    # 키워드에서 술어 힌트 뽑기
-    preds = []
-    for kw in keywords:
-        pred = PRED_KEYWORDS.get(kw)  # 한글 키워드 우선
-        if not pred:
-            # 영문/코드성 키워드 간단 휴리스틱
-            if re.match(r"^[A-Z]\d{2}(\.\d+)?$", kw.upper()):  # 예: C50.9
-                pred = "HAS_CONDITION"
-        if pred and pred not in preds:
-            preds.append(pred)
-
+    # 먼저 최신 profile_id 확보
     with psycopg.connect(DB_URL) as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT id FROM profiles WHERE user_id=%(u)s ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1", {"u": user_id})
+            row = cur.fetchone()
+            if not row:
+                return []
+            pid = row[0]
+
+            keywords = extract_keywords(query_text or "", max_k=6)
+            patterns = [f"%{kw}%" for kw in keywords] if keywords else []
+            preds = []
+            for kw in keywords:
+                pred = PRED_KEYWORDS.get(kw)
+                if not pred and re.match(r"^[A-Z]\d{2}(\.\d+)?$", kw.upper()):
+                    pred = "HAS_CONDITION"
+                if pred and pred not in preds:
+                    preds.append(pred)
+
             if patterns or preds:
-                cur.execute(
-                    COLLECTION_BY_KEYWORDS_SQL,
-                    {"user_id": user_id, "patterns": patterns or ["%%"], "preds": preds or [], "limit": limit},
-                )
+                cur.execute(COLLECTION_BY_KEYWORDS_SQL, {"profile_id": pid, "patterns": patterns or ["%%"], "preds": preds or [], "limit": limit})
             else:
-                cur.execute(COLLECTION_RECENT_SQL, {"user_id": user_id, "limit": limit})
+                cur.execute(COLLECTION_RECENT_SQL, {"profile_id": pid, "limit": limit})
             rows = cur.fetchall()
 
-    out: List[Dict[str, Any]] = []
-    for (tid, uid, subj, pred, obj, cs, code, onset, end, neg, conf, src, cat) in rows:
+    out = []
+    for (tid, prof_id, subj, pred, obj, cs, code, onset, end, neg, conf, src, cat) in rows:
         out.append({
             "id": tid,
-            "user_id": uid,
+            "profile_id": prof_id,
             "subject": subj,
             "predicate": pred,
             "object": obj,

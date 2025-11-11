@@ -209,10 +209,11 @@ def extract_triples(input_text: str, source_id: Optional[str] = None) -> List[Tr
 #    - 동일 Key( user_id, predicate, (code or object), onset_date, end_date, negation )
 #      존재 시: confidence = GREATEST, 비어있는 code_system/code는 보강
 # ─────────────────────────────────────────────────────────────────────────────
+# === FIND/INSERT/UPDATE SQL을 collections 스키마로 교체 ===
 FIND_SQL = """
 SELECT id, code_system, code, confidence
-FROM triples
-WHERE user_id = %(user_id)s
+FROM collections
+WHERE profile_id = %(profile_id)s
   AND predicate = %(predicate)s
   AND COALESCE(code,'') = COALESCE(%(code)s,'')
   AND object = %(object)s
@@ -223,18 +224,18 @@ LIMIT 1;
 """
 
 INSERT_SQL = """
-INSERT INTO triples (
-  user_id, subject, predicate, object, code_system, code,
+INSERT INTO collections (
+  profile_id, subject, predicate, object, code_system, code,
   onset_date, end_date, negation, confidence, source_id, created_at
 ) VALUES (
-  %(user_id)s, %(subject)s, %(predicate)s, %(object)s, %(code_system)s, %(code)s,
+  %(profile_id)s, %(subject)s, %(predicate)s, %(object)s, %(code_system)s, %(code)s,
   %(onset_date)s::date, %(end_date)s::date, %(negation)s, %(confidence)s, %(source_id)s, NOW()
 )
 RETURNING id;
 """
 
 UPDATE_SQL = """
-UPDATE triples
+UPDATE collections
 SET
   code_system = COALESCE(%(code_system)s, code_system),
   code = COALESCE(%(code)s, code),
@@ -242,6 +243,23 @@ SET
   source_id = COALESCE(%(source_id)s, source_id)
 WHERE id = %(id)s;
 """
+
+# === 상단 SQL/함수 교체 추가 ===
+SELECT_PROFILE_SQL = """
+SELECT id FROM profiles WHERE user_id = %(user_id)s
+ORDER BY updated_at DESC NULLS LAST, id DESC
+LIMIT 1;
+"""
+INSERT_EMPTY_PROFILE_SQL = "INSERT INTO profiles (user_id, updated_at) VALUES (%(user_id)s, now()) RETURNING id;"
+
+def _ensure_profile_id(conn, user_id: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(SELECT_PROFILE_SQL, {"user_id": user_id})
+        r = cur.fetchone()
+        if r:
+            return r[0]
+        cur.execute(INSERT_EMPTY_PROFILE_SQL, {"user_id": user_id})
+        return cur.fetchone()[0]
 
 def _to_exact_date(d: Optional[str]) -> Optional[str]:
     """YYYY-MM → YYYY-MM-01 로 변환하여 DATE 캐스팅 가능하게."""
@@ -253,6 +271,7 @@ def _to_exact_date(d: Optional[str]) -> Optional[str]:
         return d + "-01"
     return None
 
+# === upsert_triples() 내부 변경: user_id → profile_id 할당 후 사용 ===
 def upsert_triples(user_id: str, triples: List[TripleItem]) -> Dict[str, Any]:
     if not triples:
         return {"inserted": 0, "updated": 0}
@@ -261,11 +280,12 @@ def upsert_triples(user_id: str, triples: List[TripleItem]) -> Dict[str, Any]:
     updated = 0
 
     with psycopg.connect(DB_URL, autocommit=True) as conn:
+        profile_id = _ensure_profile_id(conn, user_id)
+
         with conn.cursor() as cur:
             for t in triples:
-                # 조회 키 구성
                 key_params = {
-                    "user_id": user_id,
+                    "profile_id": profile_id,
                     "predicate": t.predicate,
                     "code": t.code,
                     "object": t.object,
@@ -277,7 +297,7 @@ def upsert_triples(user_id: str, triples: List[TripleItem]) -> Dict[str, Any]:
                 row = cur.fetchone()
 
                 params_common = {
-                    "user_id": user_id,
+                    "profile_id": profile_id,
                     "subject": t.subject,
                     "predicate": t.predicate,
                     "object": t.object,
@@ -292,7 +312,7 @@ def upsert_triples(user_id: str, triples: List[TripleItem]) -> Dict[str, Any]:
 
                 if row is None:
                     cur.execute(INSERT_SQL, params_common)
-                    _ = cur.fetchone()  # id
+                    _ = cur.fetchone()
                     inserted += 1
                 else:
                     cur.execute(UPDATE_SQL, {**params_common, "id": row[0]})
