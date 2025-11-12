@@ -57,14 +57,8 @@ def render_chatbot_page():
                 st.write(f"🤖: {message['content']}")
                 if "policies" in message:
                     for idx, policy in enumerate(message["policies"]):
-                        with st.expander(f"📋 {policy['title']}"):
-                            st.write(f"**설명:** {policy['description']}")
-                            st.write(f"**자격:** {policy['eligibility']}")
-                            st.write(f"**혜택:** {policy['benefits']}")
-                            if st.button(
-                                "자세히 보기", key=f"btn_{policy['id']}_{idx}"
-                            ):
-                                st.markdown(f"[신청하기]({policy['applicationUrl']})")
+                        # 정책 카드 위젯을 사용하여 렌더링
+                        render_policy_card(policy)
 
     # 입력 영역
     st.markdown("---")
