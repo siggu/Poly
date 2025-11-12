@@ -3,7 +3,6 @@ import time
 import streamlit as st
 
 from ..backend_service import api_delete_user_account, api_reset_password
-from ..db.database import get_user_password_hash
 from ..utils.session_manager import clear_session
 
 

@@ -1,8 +1,8 @@
-import uuid
-import time
+"""마이페이지 관련 함수들 11.12 수정"""
+
 from datetime import date
 import streamlit as st
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from ..backend_service import (
     api_save_profiles,
     api_get_all_profiles_by_user_id,

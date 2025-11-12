@@ -1,3 +1,4 @@
+"""앱 전역 상태 관리를 위한 session_state 초기화 및 관리 함수들"""
 import streamlit as st
 import uuid
 import time
@@ -15,7 +16,8 @@ def initialize_session_state():
             {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
-                "content": "안녕하세요! 정책 추천 챗봇입니다. 나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.",
+                "content": """ 안녕하세요! 정책 추천 챗봇입니다. 
+            나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.""",
                 "timestamp": time.time(),
             }
         ],
@@ -36,9 +38,10 @@ def reset_chat_session():
         {
             "id": str(uuid.uuid4()),
             "role": "assistant",
-            "content": "안녕하세요! 정책 추천 챗봇입니다. 나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.",
+            "content": """ 안녕하세요! 정책 추천 챗봇입니다. 
+            나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.""",
             "timestamp": time.time(),
         }
     ]
-    st.session_state["input"] = ""
+    st.session_state["input"] = "" 
     st.session_state["is_loading"] = False

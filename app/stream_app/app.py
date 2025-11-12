@@ -1,36 +1,23 @@
-import asyncio
-import sys
-import os
+"""의료 혜택 정보 제공 에이전트 챗봇 메인 애플리케이션 파일 11.12 수정"""
 import streamlit as st
-from datetime import date
-import uuid
-import time
-import json
-import re
-
-# Windows에서 asyncio 이벤트 루프 정책 설정
-# if sys.platform == "win32":
-#     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from src.state_manger import initialize_session_state
 from src.pages.auth import (
     initialize_auth_state,
-    render_auth_modal,
     render_login_tab,
     render_signup_tab,
 )
-
 from src.widgets.sidebar import render_sidebar
-from src.utils.template_loader import load_template, render_template, load_css
-from src.utils.session_manager import load_session, update_login_status
-from src.backend_service import (
-    api_send_chat_message,
-    api_reset_password,
-)
+from src.utils.template_loader import render_template, load_css
+from src.utils.session_manager import load_session
 from src.backend_service import api_get_user_info
-from src.db.database import get_user_by_username as api_get_user_info_db, get_all_profiles_by_user_id
-from dotenv import load_dotenv
+from src.db.database import get_all_profiles_by_user_id
 
+from src.pages.chat import render_chatbot_main
+from src.pages.my_page import render_my_page_modal
+from src.pages.settings import render_settings_modal
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -214,16 +201,8 @@ def main_app():
         # 비로그인 상태: 첫 화면에 로그인/회원가입 모두 표시
         render_landing_page()
     else:
-        # 로그인 상태
-        # 사이드바 렌더링
+        # 로그인 상태: 사이드바 렌더링
         render_sidebar()
-        from src.pages.chat import render_chatbot_main
-        from src.pages.my_page import render_my_page_modal
-        from src.pages.settings import (
-            initialize_settings_state,
-            render_settings_modal,
-        )
-
         # 설정 모달과 마이페이지 모달은 동시에 열리지 않도록 처리
         if st.session_state.get("settings_modal_open", False):
             # 설정 모달이 열려있으면 마이페이지 닫기

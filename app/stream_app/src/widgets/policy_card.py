@@ -1,7 +1,8 @@
+""" 정책 카드 위젯 관련 함수들 """
 import streamlit as st
 import uuid
 from typing import Dict, Any
-from src.utils.template_loader import load_template, render_template, load_css
+from src.utils.template_loader import render_template, load_css
 
 
 def render_policy_card(policy: Dict[str, Any]):

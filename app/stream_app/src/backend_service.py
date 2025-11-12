@@ -1,11 +1,11 @@
 """11.12 백엔드 서비스 API 함수들 - 데이터베이스 직접 접근 방식"""
-import json
+
 import bcrypt
 import time
 import logging
 import re
 from typing import Dict, Any, Tuple, Optional, List
-from datetime import datetime
+
 
 # DB 접근 함수 임포트 (상대 경로 사용)
 try:
@@ -139,12 +139,12 @@ def api_save_profiles(
                 pass
             q.setdefault("gender", "")
             q.setdefault("location", "")
+            q.setdefault("name", "")  # 이름 필드 추가
             q.setdefault("healthInsurance", "")
             q.setdefault("basicLivelihood", "없음")
             q.setdefault("disabilityLevel", "0")
             q.setdefault("longTermCare", "NONE")
             q.setdefault("pregnancyStatus", "없음")
-            q.setdefault("name", "")
             q.setdefault("id", "")
             q.setdefault("isActive", False)
             return q
@@ -327,22 +327,7 @@ def api_send_chat_message(
             user_profile = user_profile_from_db or {}
 
         logger.info(f"챗봇 메시지 전송: {user_id} - {message[:50]}")
-
-        # ... (이하 동일)
-        return True, {
-            "content": "고객님의 조건에 맞는 정책을 찾았습니다.",
-            "policies": [
-                {
-                    "id": "1",
-                    "title": "청년 월세 지원",
-                    "description": "만 19세~34세 청년의 주거비 부담을 덜어주기 위한 월세 지원 정책입니다.",
-                    "eligibility": "만 19~34세, 소득 기준 충족, 서울시 거주",
-                    "benefits": "월 최대 20만원 지원 (최대 12개월)",
-                    "applicationUrl": "https://example.com/apply",
-                    "isEligible": True,
-                }
-            ],
-        }
+        return True
     except Exception as e:
         logger.error(f"메시지 전송 중 오류 발생: {str(e)}")
         return False, {"error": "메시지 전송 중 오류가 발생했습니다"}

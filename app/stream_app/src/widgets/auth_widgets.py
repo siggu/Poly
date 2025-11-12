@@ -1,8 +1,8 @@
+"""인증(로그인/회원가입) 관련 위젯들"""
+
 import streamlit as st
 import datetime
-from typing import Dict, Any
 from app.stream_app.src.backend_service import (
-    api_login,
     api_signup,
     api_check_id_availability,
     api_get_user_info,
@@ -329,9 +329,6 @@ def render_signup_tab():
                 "name": st.session_state.get("signup_name", ""),
                 "gender": st.session_state.signup_gender,
                 "birthDate": st.session_state.signup_birthdate,
-                # "birthDate": st.session_state.signup_birthdate.isoformat() if isinstance(st.session_state.signup_birthdate, datetime.date) else str(st.session_state.signup_birthdate),
-                # # age는 birthDate가 명확하지 않을 때 보수적으로 사용 가능
-                # **({"age": st.session_state.signup_age} if st.session_state.get("signup_age", 0) else {}),
                 "location": st.session_state.signup_location,
                 "healthInsurance": st.session_state.signup_health,
                 "incomeLevel": st.session_state.signup_income,

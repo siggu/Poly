@@ -1,5 +1,6 @@
 """로그인/회원가입 UI 및 상태 11.10 수정"""
 
+
 import datetime
 from typing import Dict, Any, Tuple
 import streamlit as st
@@ -220,39 +221,24 @@ def handle_signup_submit(signup_data: Dict[str, Any]):
     success, message = api_signup_db(signup_data)
 
     if success:
-        # 회원가입 성공 시 자동 로그인 처리 및 세션 저장 로직은 동일
-        user_info = {
-            "id": None,  # create_user_and_profile은 id를 반환하지 않으므로, 로그인 후 채워야 함
-            "userId": signup_data["username"],  # 세션에는 userId로 저장
-            "name": signup_data.get("name", ""),
-            "gender": signup_data.get("gender", ""),
-            "birthDate": str(signup_data.get("birthDate", "")),
-            "location": signup_data.get("residency_sgg_code", ""),
-            "healthInsurance": signup_data.get("insurance_type", ""),  # 영문 ENUM 값
-            "incomeLevel": signup_data.get("median_income", ""),
-            "basicLivelihood": signup_data.get(
-                "basic_benefit_type", ""
-            ),  # 영문 ENUM 값
-            "disabilityLevel": signup_data.get("disability_grade", "0"),
-            "longTermCare": signup_data.get("ltci_grade", "NONE"),
-            "pregnancyStatus": signup_data.get("pregnant_or_postpartum", "없음"),
-        }
+        # 회원가입 성공 시, DB에서 방금 생성된 사용자 정보를 다시 조회하여 세션을 설정합니다.
+        ok, user_info = api_get_user_info_db(signup_data["username"])
+        if not ok:
+            return False, "회원가입은 성공했으나, 사용자 정보를 불러오는 데 실패했습니다."
+
         st.session_state["user_info"] = user_info
         st.session_state["is_logged_in"] = True
         st.session_state["show_login_modal"] = False
-        initial_profile = {
-            **{
-                k: v for k, v in user_info.items() if k != "userId"
-            },  # userId는 id로 매핑
-            "id": signup_data["username"],  # 프로필 id는 username과 동일하게
-            "incomeLevel": (
-                int(signup_data.get("median_income", 0))
-                if str(signup_data.get("median_income", "")).isdigit()
-                else signup_data.get("median_income", 0)
-            ),
-            "isActive": True,  # 새로 생성된 프로필은 활성 상태
-        }
-        st.session_state["profiles"] = [initial_profile]
+
+        # 사용자의 모든 프로필 목록을 DB에서 조회
+        user_uuid = user_info.get("id")
+        ok_profiles, profiles_list = get_all_profiles_by_user_id(user_uuid)
+        if ok_profiles and profiles_list:
+            # 기본 프로필을 활성 상태로 설정
+            main_profile_id = user_info.get("main_profile_id")
+            for p in profiles_list:
+                p["isActive"] = (p["id"] == main_profile_id)
+            st.session_state["profiles"] = profiles_list
 
     return success, message
 

@@ -1,7 +1,8 @@
+"""사이드 바 위젯 관련 함수들"""
 import streamlit as st
 import uuid
 import time
-from src.utils.template_loader import load_template, render_template, load_css
+from src.utils.template_loader import render_template, load_css
 
 
 # --- 1. 상태 초기화 (필요한 경우 메인 파일에서 실행) ---

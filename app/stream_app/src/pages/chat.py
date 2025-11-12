@@ -2,10 +2,9 @@
 
 import uuid
 import time
-import re
 import streamlit as st
 from src.widgets.policy_card import render_policy_card
-from src.utils.template_loader import load_template, render_template, load_css
+from src.utils.template_loader import render_template, load_css
 from src.llm_manager import get_llm_manager
 
 
