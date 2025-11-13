@@ -202,11 +202,11 @@ LIMIT 1;
 
 INSERT_PROFILE_SQL = """
 INSERT INTO profiles (
-  user_id, birth_date, sex, residency_sgg_code, insurance_type,
+  user_id, name, birth_date, sex, residency_sgg_code, insurance_type,
   median_income_ratio, basic_benefit_type, disability_grade,
   ltci_grade, pregnant_or_postpartum12m, updated_at
 ) VALUES (
-  %(user_id)s, %(birth_date)s, %(sex)s, %(residency_sgg_code)s, %(insurance_type)s,
+  %(user_id)s, %s, %(birth_date)s, %(sex)s, %(residency_sgg_code)s, %(insurance_type)s,
   %(median_income_ratio)s, %(basic_benefit_type)s, %(disability_grade)s,
   %(ltci_grade)s, %(pregnant_or_postpartum12m)s, now()
 )

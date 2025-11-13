@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
-# init_all_schemas.py
-# 목적: 의료복지 RAG 서비스 핵심 스키마 일괄 초기화 (users / profiles / triples / (옵션) eligibility_snapshot)
-#
-# 사용 예:
-#   python init_all_schemas.py
-#   python init_all_schemas.py --drop                  # 기존 객체 삭제 후 재생성
-#   python init_all_schemas.py --reset truncate        # 데이터만 전부 비우고(IDENTITY 초기화) 제약 유지
-#   python init_all_schemas.py --no-fk                 # triples/profile FK 생략(부트스트랩 용)
-#   python init_all_schemas.py --with-snapshot         # eligibility_snapshot 포함 생성
-#
-# 환경변수:
-#   DATABASE_URL = postgresql://user:pass@host:5432/dbname
-#
-# 의존:
-#   pip install psycopg python-dotenv
+"""
+create_user_schema.py
+- 목적: 사용자/프로필 스키마 + 대화 스키마(conversations/messages/embeddings)까지 일괄 초기화
+- 기존 테이블: users, profiles, triples, (옵션)eligibility_snapshot
+- 신규 테이블: conversations(1:1 by profile), messages(1:N), conversation_embeddings(pgvector)
+- 주의: Policy DB(documents/embeddings)와 collections는 건드리지 않음(조회 전용/별도 관리 가정)
+
+사용 예:
+  python create_user_schema.py
+  python create_user_schema.py --drop                  # 기존 객체 삭제 후 재생성
+  python create_user_schema.py --reset truncate        # 데이터만 비우고(IDENTITY 초기화) 제약 유지
+  python create_user_schema.py --no-fk                 # FK 생략(부트스트랩)
+  python create_user_schema.py --with-snapshot         # eligibility_snapshot 포함 생성
+  python create_user_schema.py --init-conversations    # 기존 profiles마다 conversations 1:1 초기 생성
+
+환경변수:
+  DATABASE_URL = postgresql://user:pass@host:5432/dbname
+  CONV_EMB_DIM (선택) = pgvector 차원 (기본 1024)
+"""
 
 import os
 import argparse
@@ -25,23 +29,30 @@ load_dotenv()
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
     raise RuntimeError("DATABASE_URL not set (e.g. postgresql://user:pass@localhost:5432/db)")
-
-# psycopg는 postgresql:// 스킴을 기대
 if DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
 
-parser = argparse.ArgumentParser(description="Initialize all DB schemas for medical-welfare RAG service")
+DIM = int(os.getenv("CONV_EMB_DIM", "1024"))
+
+parser = argparse.ArgumentParser(description="Initialize users/profiles + conversations/messages/embeddings schemas")
 parser.add_argument("--drop", action="store_true", help="기존 테이블/ENUM 삭제 후 재생성")
 parser.add_argument("--reset", choices=["none", "truncate"], default="none", help="데이터 리셋 방식 (none|truncate)")
 parser.add_argument("--no-fk", action="store_true", help="FK 제약 생략 (부트스트랩용)")
 parser.add_argument("--with-snapshot", action="store_true", help="eligibility_snapshot 테이블도 생성")
+parser.add_argument("--init-conversations", action="store_true", help="기존 profiles마다 conversations 1:1 초기 생성")
 args = parser.parse_args()
 
 # ----------------------------
-# DROP (안전한 순서: children → parents → enums)
+# DROP (children → parents → enums)
+#   ※ collections / documents / embeddings 는 드롭/생성 대상 아님
 # ----------------------------
 DROP_SQL = r"""
--- children
+-- 대화 관련 children
+DROP TABLE IF EXISTS conversation_embeddings CASCADE;
+DROP TABLE IF EXISTS messages CASCADE;
+DROP TABLE IF EXISTS conversations CASCADE;
+
+-- 기존 children
 DROP TABLE IF EXISTS triples CASCADE;
 DROP TABLE IF EXISTS eligibility_snapshot CASCADE;
 
@@ -64,7 +75,7 @@ EXCEPTION WHEN undefined_object THEN NULL; END $$;
 """
 
 # ----------------------------
-# CREATE ENUMS
+# ENUMS
 # ----------------------------
 ENUMS_SQL = r"""
 DO $$ BEGIN
@@ -81,11 +92,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 """
 
 # ----------------------------
-# CREATE users
+# users (UUID PK)
 # ----------------------------
 USERS_SQL = r"""
 CREATE TABLE IF NOT EXISTS users (
-  id              TEXT PRIMARY KEY,
+  id              UUID PRIMARY KEY,
   username        TEXT UNIQUE NOT NULL,
   password_hash   TEXT NOT NULL,
   main_profile_id BIGINT,
@@ -93,7 +104,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- updated_at 자동 업데이트
 CREATE OR REPLACE FUNCTION set_users_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -109,20 +119,21 @@ FOR EACH ROW EXECUTE PROCEDURE set_users_updated_at();
 """
 
 # ----------------------------
-# CREATE profiles (기존 core_profile 대체) - 9개 항목
+# profiles (BIGSERIAL PK, FK→users.id UUID)
 # ----------------------------
 PROFILES_SQL_TEMPLATE = r"""
 CREATE TABLE IF NOT EXISTS profiles (
   id BIGSERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL {fk_users},
+  user_id UUID NOT NULL {fk_users},
 
+  name TEXT,
   birth_date DATE,
-  sex TEXT,  -- 'M' | 'F' | 'O' | 'N' (정규화는 앱 레벨)
+  sex TEXT,
   residency_sgg_code TEXT,
   insurance_type insurance_type,
   median_income_ratio NUMERIC(5,2),
   basic_benefit_type basic_benefit_type DEFAULT 'NONE',
-  disability_grade SMALLINT,                           -- 0=미등록,1=심한,2=심하지 않음
+  disability_grade SMALLINT,
   ltci_grade ltci_grade DEFAULT 'NONE',
   pregnant_or_postpartum12m BOOLEAN,
 
@@ -136,18 +147,18 @@ CREATE INDEX IF NOT EXISTS idx_profiles_insurance    ON profiles(insurance_type)
 CREATE INDEX IF NOT EXISTS idx_profiles_income       ON profiles(median_income_ratio);
 """
 
-# users.main_profile_id FK + 소유 일치성 보장
 USERS_PROFILES_FK_AND_TRIGGERS = r"""
--- users.main_profile_id → profiles.id
+ALTER TABLE users
+  DROP CONSTRAINT IF EXISTS fk_users_main_profile;
+
 ALTER TABLE users
   ADD CONSTRAINT fk_users_main_profile
   FOREIGN KEY (main_profile_id) REFERENCES profiles(id) ON DELETE SET NULL;
 
--- main_profile_id의 소유일치 검증
 CREATE OR REPLACE FUNCTION ensure_main_profile_belongs_to_user()
 RETURNS TRIGGER AS $$
 DECLARE
-  prof_user_id TEXT;
+  prof_user_id UUID;
 BEGIN
   IF NEW.main_profile_id IS NULL THEN
     RETURN NEW;
@@ -165,7 +176,6 @@ CREATE TRIGGER trg_users_main_profile_check
 BEFORE INSERT OR UPDATE OF main_profile_id ON users
 FOR EACH ROW EXECUTE PROCEDURE ensure_main_profile_belongs_to_user();
 
--- "해당 유저의 첫 번째 프로필이 자동으로 main_profile_id가 된다"
 CREATE OR REPLACE FUNCTION set_main_profile_on_first()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -185,7 +195,7 @@ FOR EACH ROW EXECUTE PROCEDURE set_main_profile_on_first();
 """
 
 # ----------------------------
-# CREATE triples (SPO 컬렉션) - profile_id 기반
+# triples (SPO by profile_id)
 # ----------------------------
 TRIPLES_SQL_TEMPLATE = r"""
 CREATE TABLE IF NOT EXISTS triples (
@@ -210,7 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_triples_created      ON triples (created_at);
 """
 
 # ----------------------------
-# CREATE eligibility_snapshot (옵션) - profile_id 기반
+# eligibility_snapshot (옵션)
 # ----------------------------
 SNAPSHOT_SQL_TEMPLATE = r"""
 CREATE TABLE IF NOT EXISTS eligibility_snapshot (
@@ -220,7 +230,7 @@ CREATE TABLE IF NOT EXISTS eligibility_snapshot (
   rule_version TEXT NOT NULL,
   inputs JSONB NOT NULL,
   outputs JSONB NOT NULL,
-  decision TEXT NOT NULL,                -- APPROVED/REJECTED/REVIEW 등
+  decision TEXT NOT NULL,
   explanation TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -229,10 +239,71 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_profile ON eligibility_snapshot(profile_
 """
 
 # ----------------------------
+# conversations/messages/conversation_embeddings (신규)
+#   - profiles.id (BIGINT) ↔ conversations.profile_id (BIGINT)
+#   - conversations.id (UUID) ↔ messages.conversation_id / conv_embeddings.conversation_id (UUID)
+# ----------------------------
+CONVERSATIONS_SQL_TEMPLATE = r"""
+CREATE TABLE IF NOT EXISTS conversations (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id   BIGINT NOT NULL {fk_profiles} UNIQUE,
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at     TIMESTAMPTZ,
+  summary      JSONB,
+  model_stats  JSONB,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_conversations_profile_id ON conversations(profile_id);
+
+CREATE OR REPLACE FUNCTION set_conversations_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_conversations_updated_at ON conversations;
+CREATE TRIGGER trg_conversations_updated_at
+BEFORE UPDATE ON conversations
+FOR EACH ROW EXECUTE PROCEDURE set_conversations_updated_at();
+"""
+
+MESSAGES_SQL = r"""
+CREATE TABLE IF NOT EXISTS messages (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id  UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  turn_index       INT  NOT NULL,
+  role             TEXT NOT NULL CHECK (role IN ('user','assistant','tool')),
+  content          TEXT NOT NULL,
+  tool_name        TEXT,
+  token_usage      JSONB,
+  meta             JSONB,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (conversation_id, turn_index, role)
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+"""
+
+CONV_EMB_SQL_TEMPLATE = r"""
+CREATE TABLE IF NOT EXISTS conversation_embeddings (
+  conversation_id  UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  chunk_id         TEXT NOT NULL,
+  embedding        VECTOR({dim}) NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (conversation_id, chunk_id)
+);
+"""
+
+# ----------------------------
 # TRUNCATE (자료만 리셋)
 # ----------------------------
 TRUNCATE_SQL = r"""
 TRUNCATE TABLE
+  conversation_embeddings,
+  messages,
+  conversations,
   triples,
   eligibility_snapshot,
   profiles,
@@ -256,24 +327,49 @@ def build_snapshot_sql(no_fk: bool) -> str:
     fk_profiles = "" if no_fk else "REFERENCES profiles(id) ON DELETE CASCADE"
     return SNAPSHOT_SQL_TEMPLATE.format(fk_profiles=fk_profiles)
 
+def build_conversations_sql(no_fk: bool) -> str:
+    fk_profiles = "" if no_fk else "REFERENCES profiles(id) ON DELETE CASCADE"
+    return CONVERSATIONS_SQL_TEMPLATE.format(fk_profiles=fk_profiles)
+
+def build_conv_emb_sql(dim: int) -> str:
+    return CONV_EMB_SQL_TEMPLATE.format(dim=dim)
+
+def init_conversations_for_existing_profiles(cur):
+    # profiles마다 conversations 1:1 생성 (없을 때만)
+    print("→ INIT conversations for existing profiles ...")
+    cur.execute("""
+        INSERT INTO conversations (profile_id)
+        SELECT p.id
+          FROM profiles p
+          LEFT JOIN conversations c ON c.profile_id = p.id
+         WHERE c.profile_id IS NULL
+    """)
+
 with psycopg.connect(DB_URL, autocommit=True) as conn:
     with conn.cursor() as cur:
         if args.drop:
             exec_sql(cur, DROP_SQL, "DROP existing tables & enums")
 
-        # enums → users → profiles → (users<->profiles FK & triggers) → triples → snapshot
         exec_sql(cur, ENUMS_SQL, "CREATE enums")
         exec_sql(cur, USERS_SQL, "CREATE users")
         exec_sql(cur, build_profiles_sql(args.no_fk), "CREATE profiles")
         if not args.no_fk:
-            exec_sql(cur, USERS_PROFILES_FK_AND_TRIGGERS, "ADD users<->profiles FK & triggers (main_profile default=first)")
+            exec_sql(cur, USERS_PROFILES_FK_AND_TRIGGERS, "ADD users<->profiles FK & triggers")
 
+        # 기존 컬렉션/문서/임베딩은 건드리지 않음(조회/별도 파이프라인)
         exec_sql(cur, build_triples_sql(args.no_fk), "CREATE triples")
-
         if args.with_snapshot:
             exec_sql(cur, build_snapshot_sql(args.no_fk), "CREATE eligibility_snapshot")
 
+        # 신규: 대화 스키마
+        exec_sql(cur, build_conversations_sql(args.no_fk), "CREATE conversations")
+        exec_sql(cur, MESSAGES_SQL, "CREATE messages")
+        exec_sql(cur, build_conv_emb_sql(DIM), "CREATE conversation_embeddings")
+
         if args.reset == "truncate":
             exec_sql(cur, TRUNCATE_SQL, "TRUNCATE all data (restart identities)")
+
+        if args.init_conversations:
+            init_conversations_for_existing_profiles(cur)
 
 print("✅ Initialization completed.")

@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 import utils
 from base.base_crawler import BaseCrawler
-from base.llm_crawler import LLMStructuredCrawler
+from app.crawling.base.llm_crawler import LLMStructuredCrawler
 from components.link_collector import LinkCollector
 from components.link_filter import LinkFilter
 from components.page_processor import PageProcessor
@@ -55,7 +55,7 @@ class DistrictCrawler(BaseCrawler):
         self.link_collector = LinkCollector()
         self.link_filter = LinkFilter()
         self.page_processor = PageProcessor()
-        self.llm_crawler = LLMStructuredCrawler(model="gpt-4o-mini")
+        self.llm_crawler = LLMStructuredCrawler(model="gpt-4o")
 
         # 출력 디렉토리 생성
         os.makedirs(output_dir, exist_ok=True)

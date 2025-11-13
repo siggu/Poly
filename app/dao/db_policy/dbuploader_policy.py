@@ -276,19 +276,24 @@ def main():
             cur.execute("""
                 INSERT INTO documents
                     (title, requirements, benefits, raw_text, url, policy_id,
-                     region, sitename, weight, eval_target, eval_content,
-                     llm_reinforced, llm_reinforced_sources)
+                    region, sitename, weight, eval_target, eval_content,
+                    llm_reinforced, llm_reinforced_sources)
                 VALUES
                     (%s, %s, %s, %s, %s, %s,
-                     %s, %s, %s, %s, %s,
-                     %s, %s)
+                    %s, %s, %s, %s, %s,
+                    %s, %s)
                 RETURNING id;
             """, (
-                title, requirements, benefits, raw_text, url, policy_id,
+                title, requirements, benefits, raw_text, url, None,
                 region, sitename, weight,
                 eval_target, eval_content, llm_reinforced, llm_reinforced_sources
             ))
             doc_id = cur.fetchone()[0]
+            # ✅ policy_id에 자신의 id 설정
+            cur.execute(
+                "UPDATE documents SET policy_id = %s WHERE id = %s;",
+                (doc_id, doc_id)
+            )
 
             # Embeddings 생성: title / requirements / benefits
             emb_rows = []

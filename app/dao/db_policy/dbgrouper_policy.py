@@ -54,63 +54,55 @@ def _has_higher_weight(conn, base_weight: float) -> bool:
     with conn.cursor() as cur:
         cur.execute("SELECT 1 FROM documents WHERE weight > %s LIMIT 1", (base_weight,))
         return cur.fetchone() is not None
-def unify_policy_ids_after_grouping(conn, *, commit_every: int = 100):
+def unify_policy_ids_after_grouping(conn, table="documents", id_col="id", parent_col="policy_id", verbose=True):
     """
-    1차 그루핑(간선 생성/병합 등) 이후 실행.
-    - 각 policy 트리의 root를 구하고,
-    - 그 서브트리에 속한 모든 documents.policy_id를 root로 통일한다.
+    documents.policy_id 가 '부모 id' 를 가리키는 parent-pointer 체계일 때,
+    모든 노드의 policy_id 를 최종 루트 id 로 일괄 갱신(경로 압축).
+
+    - 루트(부모가 NULL)인 노드는 policy_id = 자기 id 로 채웁니다.
+    - 순환(cycle) 방지: 재귀 CTE에 path 배열을 넣어 방문 노드 재방문을 차단합니다.
     """
+    sql = f"""
+    WITH RECURSIVE walk AS (
+      -- 각 문서를 leaf로 시작
+      SELECT d.{id_col} AS leaf, d.{id_col} AS cur_id, d.{parent_col} AS cur_parent, ARRAY[d.{id_col}] AS path
+      FROM {table} d
+
+      UNION ALL
+
+      -- parent 포인터를 따라 위로 올라가며 루트 탐색
+      SELECT w.leaf, p.{id_col} AS cur_id, p.{parent_col} AS cur_parent, w.path || p.{id_col}
+      FROM walk w
+      JOIN {table} p ON p.{id_col} = w.cur_parent
+      WHERE w.cur_parent IS NOT NULL
+        AND NOT p.{id_col} = ANY(w.path)  -- cycle 방지
+    ),
+    root_map AS (
+      -- leaf 별 최종 루트: cur_parent 가 NULL 인 지점의 cur_id
+      SELECT w.leaf AS {id_col},
+             COALESCE(
+               (SELECT w2.cur_id
+                FROM walk w2
+                WHERE w2.leaf = w.leaf AND w2.cur_parent IS NULL
+                LIMIT 1),
+               w.leaf  -- 안전장치: 루트를 못 찾으면 자기 자신
+             ) AS root_id
+      FROM walk w
+      GROUP BY w.leaf
+    )
+    UPDATE {table} d
+    SET {parent_col} = r.root_id
+    FROM root_map r
+    WHERE d.{id_col} = r.{id_col}
+      AND d.{parent_col} IS DISTINCT FROM r.root_id;
+    """
+
     with conn.cursor() as cur:
-        # documents에 policy_id 없는 경우 대비
-        cur.execute("""
-            ALTER TABLE documents
-            ADD COLUMN IF NOT EXISTS policy_id BIGINT
-        """)
-        conn.commit()
-
-        # 현재 documents에 존재하는 policy_id 집합
-        cur.execute("SELECT DISTINCT policy_id FROM documents WHERE policy_id IS NOT NULL")
-        all_pids = [r[0] for r in cur.fetchall()]
-
-    if not all_pids:
-        print("unify_policy_ids_after_grouping: 정책 ID가 없습니다.")
-        return
-
-    visited_roots = set()
-    updates_done = 0
-    for pid in all_pids:
-        # 해당 pid가 속한 트리의 root
-        root = utils_db.get_policy_root_id(conn, pid)
-        if root in visited_roots:
-            continue
-        visited_roots.add(root)
-
-        # root 기준 서브트리 전체 policy_id 집합
-        subtree = utils_db.get_policy_subtree_ids(conn, root)
-        if not subtree:
-            continue
-
-        # 이미 root로 통일된 경우 skip
-        if subtree == {root}:
-            continue
-
-        # 통일 실행: 서브트리 전체를 root로
-        with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE documents
-                SET policy_id = %s
-                WHERE policy_id = ANY(%s) AND policy_id IS DISTINCT FROM %s
-            """, (root, list(subtree), root))
-            changed = cur.rowcount
-
-        if changed:
-            updates_done += changed
-            if updates_done % commit_every == 0:
-                conn.commit()
-                print(f"  · 통일 진행중: {updates_done}건 업데이트 (root={root}, subtree_size={len(subtree)})")
-
+        cur.execute(sql)
+        updated = cur.rowcount
     conn.commit()
-    print(f"✅ policy_id 통일 완료: 총 {updates_done}건 업데이트")
+    if verbose:
+        print(f"[unify] updated rows: {updated}")
 
 def assign_policy_ids(
     title_field: str = "title",

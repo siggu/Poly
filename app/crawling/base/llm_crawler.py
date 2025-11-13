@@ -66,7 +66,7 @@ class LLMStructuredCrawler(BaseCrawler):
       (2) 요약만 입력 → eval_target(1~10), eval_content(0~10)
     """
 
-    def __init__(self, api_key: str = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str = None, model: str = "gpt-4o"):
         super().__init__()
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:

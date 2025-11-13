@@ -244,11 +244,12 @@ def upload_records(records, reset="none", emb_model="dragonkue/BGE-m3-ko", commi
     finally:
         cur.close()
         conn.close()
-
+        
 # ─────────────────────────────────────────────
 # 그룹핑
 # ─────────────────────────────────────────────
-def group_policies(threshold=0.85, batch_size=500, reset_all=False, verbose=True):
+def group_policies(threshold=0.85, batch_size=500, reset_all=False, verbose=True, unify=True):
+    # 1) 1차 그루핑
     res = dbgrouper.assign_policy_ids(
         title_field="title",
         similarity_threshold=threshold,
@@ -257,7 +258,19 @@ def group_policies(threshold=0.85, batch_size=500, reset_all=False, verbose=True
         reset_all_on_start=reset_all,
         verbose=verbose,
     )
+
+    # 2) 루트로 policy_id 통일 (옵션)
+    if unify:
+        from psycopg2 import connect
+        from app.dao.db_policy.dbgrouper_policy import unify_policy_ids_after_grouping
+        from app.dao.db_policy.dbgrouper_policy import _build_dsn_from_env  # 이미 그 파일에 있음
+
+        dsn = _build_dsn_from_env()
+        with connect(dsn) as conn:
+            unify_policy_ids_after_grouping(conn)
+
     return res
+
 
 
 def _get_runall_urls():
