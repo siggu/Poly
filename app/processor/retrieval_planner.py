@@ -1,35 +1,41 @@
+# -*- coding: utf-8 -*-
 # retrieval_planner.py
-# 목적: "Retrieval Planner" 노드
-# - Router 결정(required_rag)에 따라 PROFILE/ COLLECTION/ BOTH/ NONE 중 무엇을 조회할지 결정
-# - PROFILE: core_profile에서 1레코드 조회 → 요약 컨텍스트 구성
-# - COLLECTION: triples에서 키워드 기반(간단) 검색 → 컨텍스트 구성
-# - 결과는 state["retrieval"]에 {used, profile_ctx?, collection_ctx?} 형태로 저장
-#
-# 특징:
-# - LLM 비사용(규칙 기반). 비용/지연 최소화
-# - 키워드 검색은 간단한 ILIKE ANY 패턴(벡터스토어 없을 때용). 없으면 최신 N개
-# - 삼중 컨텍스트는 (id, predicate, object, code_system, code, onset/end, negation, confidence, created_at)로 요약
-#
-# 의존:
-#   pip install psycopg python-dotenv
-#
-# 환경:
-#   DATABASE_URL=postgresql://user:pass@host:5432/dbname
+# -------------------------------------------------------------------
+# 기능:
+#   1) ephemeral + DB 프로필/컬렉션 merge
+#   2) SentenceTransformer(bge-m3-ko) 임베딩
+#   3) pgvector 기반 문서 검색
+#   4) state["retrieval"]에 profile_ctx, collection_ctx, rag_snippets 저장
+# -------------------------------------------------------------------
 
 from __future__ import annotations
-
 import os
 import re
 import json
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, TypedDict
 
 import psycopg
 from dotenv import load_dotenv
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
+# merge utils
+from app.langgraph.utils.merge_utils import merge_profile, merge_collection
+
+# DB fetch utils
+from app.dao.db_user_utils import fetch_profile_from_db, fetch_collections_from_db
+
+# HuggingFace embedding
+from sentence_transformers import SentenceTransformer
+
 load_dotenv()
 
+<<<<<<< HEAD
+
+# -------------------------------------------------------------------
+# DB URL
+# -------------------------------------------------------------------
+=======
 EMBED_MODEL_NAME = "dragonkue/bge-m3-ko"
 EMBED_DEVICE = "cpu"
 _embedding_model: Optional[HuggingFaceEmbeddings] = None
@@ -51,57 +57,141 @@ def _embed_query_vector(text: str) -> str:
     vector = model.embed_query(text or "")
     return "[" + ",".join(f"{v:.6f}" for v in vector) + "]"
 
+>>>>>>> 36c79b771493dfe171d3d5b7342a9693d8251afa
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
-    raise RuntimeError("DATABASE_URL not set (e.g. postgresql://user:pass@localhost:5432/db)")
+    raise RuntimeError("DATABASE_URL not configured")
+
 if DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 간단 키워드 추출(LLM 비사용). 한글/영문/숫자 토큰 중 길이 2+ 만 사용
-# ─────────────────────────────────────────────────────────────────────────────
-def extract_keywords(text: str, max_k: int = 6) -> List[str]:
+
+# -------------------------------------------------------------------
+# HuggingFace Embedding Model
+# -------------------------------------------------------------------
+_embedding_model = SentenceTransformer("dragonkue/bge-m3-ko")
+
+def _embed_text(text: str) -> List[float]:
+    """
+    SentenceTransformer encode → list[float]
+    """
+    return _embedding_model.encode(
+        text,
+        normalize_embeddings=True
+    ).tolist()
+
+
+# -------------------------------------------------------------------
+# DB Connection
+# -------------------------------------------------------------------
+def _get_conn():
+    return psycopg.connect(DB_URL)
+
+
+# -------------------------------------------------------------------
+# Keyword Extraction
+# -------------------------------------------------------------------
+def extract_keywords(text: str, max_k: int = 8) -> List[str]:
     if not text:
         return []
-    # 한글/영문/숫자 토큰
-    toks = re.findall(r"[가-힣A-Za-z0-9]+", text)
-    # 너무 흔한 단어 제거(매우 간단한 stoplist)
-    stop = {"그리고","하지만","그리고요","근데","가능한가요","신청","문의","가능","여부","해당","있는","없는","있나요","인가요","혹시"}
-    # 정규화
-    norm = []
-    for t in toks:
-        tt = t.lower()
-        if (len(tt) >= 2) and (tt not in stop):
-            norm.append(tt)
-    # 중복 제거 보존
-    seen = set()
-    out = []
-    for w in norm:
-        if w not in seen:
-            seen.add(w)
-            out.append(w)
-        if len(out) >= max_k:
-            break
+    tokens = re.findall(r"[가-힣A-Za-z0-9]+", text)
+    stop = {"그리고","하지만","근데","가능","문의","신청","여부","있나요","해당"}
+    out, seen = [], set()
+    for t in tokens:
+        t = t.lower()
+        if len(t) >= 2 and t not in stop:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+                if len(out) >= max_k:
+                    break
     return out
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DB 조회: PROFILE
-# ─────────────────────────────────────────────────────────────────────────────
-# === PROFILE_SQL 교체 ===
-PROFILE_SQL = """
-SELECT id, user_id, birth_date, sex, residency_sgg_code, insurance_type,
-       median_income_ratio, basic_benefit_type, disability_grade,
-       ltci_grade, pregnant_or_postpartum12m, updated_at
-FROM profiles
-WHERE user_id = %(user_id)s
-ORDER BY updated_at DESC NULLS LAST, id DESC
-LIMIT 1;
-"""
 
-
-def _calc_age(birth_date: Optional[date]) -> Optional[int]:
-    if not birth_date:
+# -------------------------------------------------------------------
+# Hybrid Document Search (Vector only)
+# -------------------------------------------------------------------
+def _sanitize_region(region_value: Optional[Any]) -> Optional[str]:
+    """
+    residency_sgg_code 문자열을 정리.
+    dict 형태({'value': '강남구'})도 지원.
+    """
+    if region_value is None:
         return None
+
+    if isinstance(region_value, dict):
+        region_value = region_value.get("value")
+
+    if region_value is None:
+        return None
+<<<<<<< HEAD
+
+    region_str = str(region_value).strip()
+    return region_str or None
+
+
+def _hybrid_search_documents(
+    query_text: str,
+    merged_profile: Optional[Dict[str, Any]],
+    top_k: int = 8,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    오직 query_text 임베딩 기반 pgvector 검색.
+    (collection predicate/object 필터 없음)
+    """
+
+    keywords = extract_keywords(query_text, max_k=8)
+
+    # region filter
+    region_filter = None
+    if merged_profile:
+        region_filter = _sanitize_region(
+            merged_profile.get("residency_sgg_code")
+        )
+        if region_filter is None:
+            print("[retrieval_planner] region_filter empty or missing")
+
+    # embedding
+    try:
+        qvec = _embed_text(query_text)
+    except Exception:
+        qvec = None
+
+    if qvec is None:
+        return [], keywords
+
+    qvec_str = str(qvec)
+
+    # SQL
+    sql = """
+        SELECT
+            d.id,
+            d.title,
+            d.requirements,
+            d.benefits,
+            d.region,
+            d.url,
+            1 - (e.embedding <=> %(qvec)s::vector) AS similarity
+        FROM documents d
+        JOIN embeddings e ON d.id = e.doc_id
+    """
+
+    params = {"qvec": qvec_str}
+
+    if region_filter:
+        sql += " WHERE TRIM(d.region) = %(region)s::text"
+        params["region"] = region_filter
+
+    sql += """
+        ORDER BY e.embedding <=> %(qvec)s::vector
+        LIMIT %(limit)s
+    """
+    params["limit"] = top_k
+
+    # execute
+    rows = []
+    with _get_conn() as conn:
+=======
     today = date.today()
     y = today.year - birth_date.year
     # 생일 지났는지?
@@ -271,29 +361,27 @@ def search_similar_documents(
 def fetch_collection_context(user_id: str, query_text: Optional[str], limit: int = 12) -> List[Dict[str, Any]]:
     # 먼저 최신 profile_id 확보
     with psycopg.connect(DB_URL) as conn:
+>>>>>>> 36c79b771493dfe171d3d5b7342a9693d8251afa
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM profiles WHERE user_id=%(u)s ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1", {"u": user_id})
-            row = cur.fetchone()
-            if not row:
-                return []
-            pid = row[0]
-
-            keywords = extract_keywords(query_text or "", max_k=6)
-            patterns = [f"%{kw}%" for kw in keywords] if keywords else []
-            preds = []
-            for kw in keywords:
-                pred = PRED_KEYWORDS.get(kw)
-                if not pred and re.match(r"^[A-Z]\d{2}(\.\d+)?$", kw.upper()):
-                    pred = "HAS_CONDITION"
-                if pred and pred not in preds:
-                    preds.append(pred)
-
-            if patterns or preds:
-                cur.execute(COLLECTION_BY_KEYWORDS_SQL, {"profile_id": pid, "patterns": patterns or ["%%"], "preds": preds or [], "limit": limit})
-            else:
-                cur.execute(COLLECTION_RECENT_SQL, {"profile_id": pid, "limit": limit})
+            cur.execute(sql, params)
             rows = cur.fetchall()
 
+<<<<<<< HEAD
+    # convert
+    results = []
+    for r in rows:
+        results.append(
+            {
+                "doc_id": r[0],
+                "title": r[1],
+                "requirements": r[2],
+                "benefits": r[3],
+                "region": r[4],
+                "url": r[5],
+                "similarity": float(r[6]),
+            }
+        )
+=======
     out = []
     for (tid, prof_id, subj, pred, obj, cs, code, onset, end, neg, conf, src, cat) in rows:
         out.append({
@@ -312,33 +400,93 @@ def fetch_collection_context(user_id: str, query_text: Optional[str], limit: int
             "created_at": cat.isoformat() if isinstance(cat, datetime) else str(cat),
         })
     return out
+>>>>>>> 36c79b771493dfe171d3d5b7342a9693d8251afa
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LangGraph 상태 & 노드
-# ─────────────────────────────────────────────────────────────────────────────
-class State(TypedDict, total=False):
-    user_id: str
-    input_text: str
-    router: Dict[str, Any]          # {"required_rag": "..."}
-    retrieval: Dict[str, Any]       # {"used": "...", "profile_ctx": {...}, "collection_ctx": [...]}
+    results.sort(key=lambda x: x["similarity"], reverse=True)
 
-def _decide_required_rag(router: Optional[Dict[str, Any]], input_text: str) -> str:
-    # 1순위: 라우터 결정
-    if router and isinstance(router, dict):
-        val = router.get("required_rag")
-        if val in {"PROFILE","COLLECTION","BOTH","NONE"}:
-            return val
-    # 2순위: 간단 휴리스틱
-    text = (input_text or "").lower()
-    # 자격/지원/혜택/대상 등 키워드 → BOTH
-    if any(k in text for k in ["자격","지원","혜택","대상","되나요","가능","요건","조건"]):
+    # rag_snippets
+    snippets = []
+    for r in results:
+        snippets.append(
+            {
+                "doc_id": r["doc_id"],
+                "title": r["title"],
+                "requirements": r["requirements"],
+                "benefits": r["benefits"],
+                "region": r["region"],
+                "url": r["url"],
+                "score": r["similarity"],
+            }
+        )
+
+    return snippets, keywords
+
+
+# -------------------------------------------------------------------
+# Required RAG Decider
+# -------------------------------------------------------------------
+def _decide_required_rag(router: Optional[Dict[str, Any]], text: str) -> str:
+    if router and router.get("required_rag") in {"PROFILE","COLLECTION","BOTH","NONE"}:
+        return router["required_rag"]
+
+    text = text.lower()
+
+    if any(k in text for k in ["자격","지원","혜택","대상","가능","요건"]):
         return "BOTH"
-    # 의료/치료/진단 언급 → COLLECTION
-    if any(k in text for k in ["진단","치료","항암","투석","암","산정특례","임신","난임","문서","영수증"]):
+
+    if any(k in text for k in ["암","진단","항암","투석","임신"]):
         return "COLLECTION"
+
     return "NONE"
 
+
+# -------------------------------------------------------------------
+# LangGraph State
+# -------------------------------------------------------------------
+class State(dict):
+    pass
+
+
+# -------------------------------------------------------------------
+# Retrieval Planner Node
+# -------------------------------------------------------------------
 def retrieval_planner_node(state: State) -> State:
+<<<<<<< HEAD
+    user_id = state.get("user_id")
+    query_text = state.get("input_text") or ""
+    router_info = state.get("router", {})
+
+    required = _decide_required_rag(router_info, query_text)
+
+    # --- ephemeral ---
+    eph_profile = state.get("ephemeral_profile")
+    eph_collection = state.get("ephemeral_collection")
+
+    # --- DB ---
+    db_profile = fetch_profile_from_db(user_id)
+    db_collection = fetch_collections_from_db(user_id)
+
+    # --- merge ---
+    merged_profile = merge_profile(db_profile, eph_profile)
+    merged_collection = merge_collection(db_collection, eph_collection)
+
+    # --- document search ---
+    rag_docs, keywords = _hybrid_search_documents(
+        query_text=query_text,
+        merged_profile=merged_profile,
+        top_k=8,
+    )
+
+    # --- store ---
+    state["retrieval"] = {
+        "used": required,
+        "profile_ctx": merged_profile,
+        "collection_ctx": merged_collection,
+        "rag_snippets": rag_docs,
+        "keywords": keywords,
+    }
+
+=======
     """
     입력: state["router"]["required_rag"] (없으면 휴리스틱)
     동작:
@@ -398,12 +546,39 @@ def retrieval_planner_node(state: State) -> State:
             ret["document_ctx"] = doc_ctx
 
     state["retrieval"] = ret
+>>>>>>> 36c79b771493dfe171d3d5b7342a9693d8251afa
     return state
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 단독 실행 테스트
-# ─────────────────────────────────────────────────────────────────────────────
+
+# -------------------------------------------------------------------
+# Manual Test
+# -------------------------------------------------------------------
+def _now():
+    return datetime.utcnow().isoformat()
+
 if __name__ == "__main__":
+<<<<<<< HEAD
+    dummy_state: State = {
+        "session_id": "sess-test-1",
+        "input_text": "재난적의료비 대상인가요? 임신 중이고 유방암 진단을 받았습니다.",
+        "router": {"required_rag": "BOTH"},
+        "profile_id": 1,  # 실제 DB에 존재하는 profiles.id로 테스트 권장
+        "ephemeral_profile": {
+            "residency_sgg_code": {"value": "강남구", "confidence": 0.95},
+            "pregnant_or_postpartum12m": {"value": True, "confidence": 0.95},
+        },
+
+        "ephemeral_collection": {
+            "triples": [
+                {
+                    "subject": "self",
+                    "predicate": "HAS_CONDITION",
+                    "object": "유방암",
+                    "code_system": "KCD7",
+                    "code": "C50.9",
+                }
+            ]
+=======
     # 가벼운 수동 테스트
     test_states: List[State] = [
         {
@@ -420,10 +595,18 @@ if __name__ == "__main__":
             "user_id": os.getenv("TEST_USER_ID","fbf9f169-7d52-486e-86ca-43310752008d"),
             "input_text": "안녕하세요",
             "router": {"required_rag": "NONE"},
+>>>>>>> 36c79b771493dfe171d3d5b7342a9693d8251afa
         },
-    ]
 
-    for s in test_states:
-        out = retrieval_planner_node(s)
-        print(json.dumps(out.get("retrieval", {}), ensure_ascii=False, indent=2))
-        print("-" * 80)
+        "messages": [
+            {
+                "role": "user",
+                "content": "재난적의료비 대상인가요? 임신 중이고 유방암 진단을 받았습니다.",
+                "created_at": _now(),
+                "meta": {},
+            }
+        ],
+    }
+
+    out = retrieval_planner_node(dummy_state)
+    print(json.dumps(out["retrieval"], ensure_ascii=False, indent=2, default=str))  
