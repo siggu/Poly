@@ -16,6 +16,10 @@
     - yangcheon_crawler.py: 양천구 크롤러
     - ydp_crawler.py: 영등포구 크롤러
     - yongsan_crawler.py: 용산구 크롤러
+    - ep_crawler.py: 은평구 크롤러
+    - jongno_crawler.py: 종로구 크롤러
+    - jungnang_crawler.py: 중랑구 크롤러
+    - gangdong_crawler.py: 강동구 크롤러
     - welfare_crawler.py: 서울시 복지포털 서비스 크롤러
     - ehealth_crawler.py: e보건소 크롤러
 """
@@ -27,8 +31,10 @@ from .crawlers import (
     WelfareCrawler,
     SongpaCrawler,
     YangcheonCrawler,
-    YdpCrawler,
-    YongsanCrawler,
+)
+from .crawlers.specific_crawler import (
+    district_menu_crawler,
+    district_configs,
 )
 
 __all__ = [
@@ -40,6 +46,6 @@ __all__ = [
     "WelfareCrawler",
     "SongpaCrawler",
     "YangcheonCrawler",
-    "YdpCrawler",
-    "YongsanCrawler",
+    "district_menu_crawler",
+    "district_configs",
 ]
