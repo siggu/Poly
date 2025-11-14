@@ -283,6 +283,11 @@ def bulk_insert_messages(
 ) -> int:
     """
     messages 시퀀스를 한 번에 INSERT.
+
+    - messages: State에 쌓인 전체 메시지 목록 (user/assistant/tool 모두 포함)
+    - start_turn_index: 기본 0.
+      실제로는 (conversation_id, turn_index, role) UNIQUE 제약이 있어
+      같은 턴이 이미 있으면 ON CONFLICT DO NOTHING 으로 스킵한다.
     """
     rows = []
     idx = start_turn_index
@@ -293,7 +298,6 @@ def bulk_insert_messages(
         meta_dict = m.get("meta") or {}
         # 메타 안에 토큰 사용량이 들어있다면 분리해서 저장
         token_usage = meta_dict.get("token_usage")
-
         tool_name = meta_dict.get("tool_name")
 
         created_at = m.get("created_at")
@@ -332,6 +336,7 @@ def bulk_insert_messages(
           content, tool_name, token_usage, meta, created_at
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (conversation_id, turn_index, role) DO NOTHING
         """,
         rows,
     )
