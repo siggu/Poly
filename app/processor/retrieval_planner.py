@@ -263,7 +263,7 @@ def retrieval_planner_node(state: State) -> State:
         "used": required,
         "profile_ctx": merged_profile,
         "collection_ctx": merged_collection,
-        "rag_documents": rag_docs,
+        "rag_snippets": rag_docs,
         "keywords": keywords,
     }
 
