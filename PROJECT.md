@@ -1,141 +1,586 @@
-## 프로젝트 개요
+# 📖 프로젝트 구조 개요
 
-이 프로젝트는 Streamlit 기반의 프론트엔드와 FastAPI 기반의 백엔드를 사용하여 사용자 맞춤형 복지/의료 정책 정보를 제공하는 AI 챗봇입니다. LLM(Large Language Model)을 활용하여 사용자 질문에 답변하고, PostgreSQL 데이터베이스를 통해 사용자 정보 및 프로필을 관리합니다.
+이 문서는 "의료 혜택 정보 제공 에이전트 챗봇" 프로젝트의 전체적인 구조를 설명합니다.
 
-## 전체 프로젝트 구조
+## 1. 최상위 아키텍처
+
+이 프로젝트는 두 개의 독립적인 서버로 구성된 **클라이언트-서버 아키텍처**를 따릅니다.
+
+- **백엔드 (Backend)**: `FastAPI` 프레임워크를 사용하여 구축되었습니다. 데이터베이스 관리, 사용자 인증, LLM 연동 등 핵심 비즈니스 로직을 처리하고, 프론트엔드에 `REST API`를 제공합니다.
+- **프론트엔드 (Frontend)**: `Streamlit` 프레임워크를 사용하여 구축되었습니다. 사용자에게 보여지는 웹 UI를 렌더링하고, 사용자의 입력을 받아 백엔드 API와 통신하여 결과를 표시합니다.
 
 ```
-Project/
-├── app/                   # FastAPI 백엔드 애플리케이션
-│   ├── api/
-│   │   └── v1/
-│   │       ├── chat.py    # 챗봇 API 라우터 (LLM 응답 생성)
-│   │       └── user.py    # 사용자 인증/프로필 API 라우터 (회원가입, 로그인, 프로필 관리)
-│   ├── backend/
-│   │   ├── llm_manager.py # LangChain 및 LLM(OpenAI) 관리 로직
-│   │   └── models.py      # LLM 요청/응답 관련 Pydantic 모델
-│   ├── db/
-│   │   └── database.py    # PostgreSQL 데이터베이스 연결 및 CRUD 함수
-│   ├── main.py            # FastAPI 앱 초기화, 라우터 등록, CORS 설정, 환경 변수 로드
-│   ├── auth.py            # JWT 토큰 생성 및 검증 유틸리티
-│   └── schemas.py         # Pydantic 스키마 (사용자, 프로필, 토큰 등 데이터 유효성 검사)
+┌──────────────────┐     HTTP 요청     ┌──────────────────┐
+│ Frontend         │  (JSON, Stream)   │ Backend          │
+│ (Streamlit)      ├───────────────────► (FastAPI)        │
+│ :8501            │◄───────────────────┤ :8000            │
+└──────────────────┘     응답          └──────────────────┘
+                                              │
+                                              │ DB 쿼리
+                                              ▼
+                                       ┌─────────────┐
+                                       │ PostgreSQL  │
+                                       │ Database    │
+                                       └─────────────┘
+```
+
+## 2. 개발 대상 디렉토리 구조
+
+### 2.1 백엔드 API 계층 (`app/api/`)
+
+```
+app/api/
+└── v1/
+    ├── chat.py              # 챗봇 API 엔드포인트
+    │   ├── POST /stream     # LLM 응답 스트리밍
+    │   └── POST /history    # 채팅 히스토리 조회
+    │
+    └── user.py              # 사용자 인증/프로필 API 엔드포인트
+        ├── POST /register   # 회원가입
+        ├── POST /login      # 로그인
+        ├── GET /profile     # 프로필 조회
+        ├── PUT /profile     # 프로필 수정
+        └── DELETE /profile  # 프로필 삭제
+```
+
+**역할:**
+- FastAPI 라우터 정의
+- 요청/응답 검증 (Pydantic 스키마 사용)
+- HTTP 상태 코드 관리
+- 백엔드 비즈니스 로직 호출
+
+### 2.2 백엔드 비즈니스 로직 (`app/backend/`)
+
+```
+app/backend/
+├── api_server.py            # FastAPI 서버 설정 및 라우터 등록
+│   ├── CORS 미들웨어 설정
+│   ├── 예외 처리 미들웨어
+│   └── 라우터 등록
 │
-├── app/frontend/          # Streamlit 프론트엔드 애플리케이션
-│   ├── app.py             # 메인 앱 (Streamlit 진입점)
-│   ├── src/               # 프론트엔드 소스 코드
-│   │   ├── pages/         # 페이지별 UI 및 핸들러 로직
-│   │   │   ├── chat.py    # 챗봇 UI 및 대화 처리
-│   │   │   ├── login.py   # 로그인/회원가입 UI 및 로직
-│   │   │   ├── my_page.py # 마이페이지 (프로필 관리) UI 및 로직
-│   │   │   └── settings.py# 설정 UI 및 로직 (비밀번호 변경, 회원 탈퇴 등)
-│   │   ├── services/
-│   │   │   └── backend.py # FastAPI 백엔드 API 호출 서비스 (HTTP 클라이언트 역할)
-│   │   ├── utils/         # 공통 유틸리티
-│   │   │   ├── session_manager.py # Streamlit 세션 상태 저장/로드
-│   │   │   └── template_loader.py # HTML 템플릿 로드 유틸리티
-│   │   ├── widgets/       # 재사용 가능한 UI 위젯
-│   │   │   └── sidebar.py # 사이드바 UI
-│   │   └── state_manger.py# Streamlit 세션 상태 초기화
+├── llm_manager.py           # LLM 모델 연동 및 관리 로직
+│   ├── LLM 모델 초기화
+│   ├── 프롬프트 생성
+│   ├── 모델 호출 및 응답 처리
+│   └── 스트리밍 응답 생성
+│
+└── models.py                # 백엔드 내부 데이터 모델
+    ├── ChatRequest
+    ├── ChatResponse
+    ├── UserProfile
+    └── 기타 내부 모델
+```
+
+**역할:**
+- 비즈니스 로직 구현
+- LLM 모델과의 상호작용
+- 데이터 처리 및 변환
+- 응답 생성
+
+### 2.3 데이터베이스 계층 (`app/db/`)
+
+```
+app/db/
+├── config.py                # 데이터베이스 연결 설정
+│   ├── DB 호스트, 포트, 사용자명, 비밀번호
+│   ├── 연결 풀 설정
+│   └── 타임아웃 설정
+│
+├── database.py              # 데이터베이스 연결 및 CRUD 함수
+│   ├── initialize_db()      # DB 초기화 및 테이블 생성
+│   ├── get_connection()     # DB 연결 획득
+│   ├── create_user()        # 사용자 생성
+│   ├── get_user()           # 사용자 조회
+│   ├── update_user()        # 사용자 수정
+│   └── delete_user()        # 사용자 삭제
+│
+├── db_core.py               # 데이터베이스 핵심 로직
+│   ├── 트랜잭션 관리
+│   ├── 쿼리 실행
+│   └── 결과 매핑
+│
+├── normalizer.py            # 데이터 정규화
+│   ├── 데이터 검증
+│   ├── 형식 변환
+│   └── 데이터 정제
+│
+└── user_repository.py       # 사용자 저장소 (Repository 패턴)
+    ├── find_by_id()
+    ├── find_by_email()
+    ├── save()
+    ├── update()
+    └── delete()
+```
+
+**역할:**
+- PostgreSQL 데이터베이스 연결 관리
+- CRUD 작업 수행
+- 데이터 검증 및 정규화
+- Repository 패턴을 통한 데이터 접근 추상화
+
+### 2.4 프론트엔드 (`app/frontend/`)
+
+```
+app/frontend/
+├── app.py                   # 프론트엔드 메인 실행 파일
+│   ├── 세션 상태 초기화
+│   ├── 페이지 라우팅
+│   └── 전체 레이아웃 관리
+│
+├── src/
+│   ├── pages/
+│   │   ├── chat.py          # 챗봇 페이지
+│   │   │   ├── 메시지 입력 UI
+│   │   │   ├── 메시지 표시
+│   │   │   └── 스트리밍 응답 처리
+│   │   │
+│   │   ├── login.py         # 로그인/회원가입 페이지
+│   │   │   ├── 로그인 폼
+│   │   │   ├── 회원가입 폼
+│   │   │   └── 인증 처리
+│   │   │
+│   │   ├── my_page.py       # 마이페이지
+│   │   │   ├── 사용자 정보 표시
+│   │   │   ├── 프로필 수정
+│   │   │   └── 채팅 히스토리
+│   │   │
+│   │   └── settings.py      # 설정 페이지
+│   │       ├── 사용자 설정
+│   │       ├── 알림 설정
+│   │       └── 로그아웃
 │   │
-│   ├── templates/         # HTML 템플릿 파일
-│   │   └── components/    # 컴포넌트별 HTML 조각
-│   └── styles/            # CSS 스타일 파일
-│       └── components/    # 컴포넌트별 CSS 조각
+│   ├── utils/
+│   │   ├── session_manager.py    # 세션 관리
+│   │   │   ├── 로그인 상태 관리
+│   │   │   ├── 토큰 저장/조회
+│   │   │   └── 세션 초기화
+│   │   │
+│   │   └── template_loader.py    # ���플릿 로더
+│   │       ├── HTML 템플릿 로드
+│   │       └── 템플릿 렌더링
+│   │
+│   ├── widgets/
+│   │   ├── auth_widgets.py       # 인증 위젯
+│   │   │   ├── 로그인 폼 위젯
+│   │   │   └── 회원가입 폼 위젯
+│   │   │
+│   │   ├── policy_card.py        # 정책 카드 위젯
+│   │   │   ├── 정책 정보 표시
+│   │   │   └── 정책 상세 보기
+│   │   │
+│   │   └── sidebar.py            # 사이드바 위젯
+│   │       ├── 네비게이션 메뉴
+│   │       ├── 사용자 정보
+│   │       └── 로그아웃 버튼
+│   │
+│   ├── backend_service.py        # 백엔드 API 통신 클라이언트
+│   │   ├── login()
+│   │   ├── register()
+│   │   ├── stream_chat()
+│   │   ├── get_profile()
+│   │   ├── update_profile()
+│   │   └── 기타 API 호출
+│   │
+│   └── state_manger.py           # Streamlit 세션 상태 관리
+│       ├── 초기 상태 설정
+│       ├── 상태 업데이트
+│       └── 상태 초기화
 │
-└── .env                   # 환경 변수 (API 키, DB 연결 정보 등)
+├── styles/
+│   ├── components/
+│   │   ├── chat_messages.css     # 채팅 메시지 스타일
+│   │   ├── chat_ui.css           # 채팅 UI 스타일
+│   │   ├── landing_page.css      # 랜딩 페이지 스타일
+│   │   ├── policy_card.css       # 정책 카드 스타일
+│   │   └── sidebar.css           # 사이드바 스타일
+│   │
+│   ├── custom.css                # 커스텀 스타일
+│   └── my_page.css               # 마이페이지 스타일
+│
+├── templates/
+│   ├── components/
+│   │   ├── chat_header.html      # 채팅 헤더 템플릿
+│   │   ├── chat_message_assistant.html  # 어시스턴트 메시지 템플릿
+│   │   ├── chat_message_user.html       # 사용자 메시지 템플릿
+│   │   ├── chat_title.html       # 채팅 제목 템플릿
+│   │   ├── chatbot_card.html     # 챗봇 카드 템플릿
+│   │   ├── disclaimer.html       # 면책 조항 템플릿
+│   │   ├── policy_card.html      # 정책 카드 템플릿
+│   │   ├── sidebar_logo.html     # 사이드바 로고 템플릿
+│   │   └── suggested_questions_header.html  # 제안 질문 헤더 템플릿
+│   │
+│   └── landing_page.html         # 랜딩 페이지 템플릿
+│
+├── data/                         # 프론트엔드 데이터 디렉토리
+├── .streamlit/                   # Streamlit 설정 디렉토리
+└── pages/                        # Streamlit ���티페이지 디렉토리 (선택사항)
 ```
 
-## 아키텍처
+**역할:**
+- 사용자 인터페이스 렌더링
+- 사용자 입력 처리
+- 백엔드 API 호출
+- 응답 표시 및 상태 관리
 
-이 프로젝트는 클라이언트-서버 아키텍처를 따르며, 프론트엔드와 백엔드가 명확히 분리되어 있습니다.
+## 3. 주요 파일 상세 설명
 
-### 1. 프론트엔드 (Streamlit)
--   **위치**: `app/frontend/`
--   **기술**: Streamlit (Python)
--   **기능**:
-    -   사용자 인터페이스 (UI) 렌더링
-    -   사용자 입력 처리 및 상태 관리
-    -   로그인, 회원가입, 프로필 관리, 챗봇 대화 등 모든 데이터 요청을 FastAPI 백엔드 API에 위임
-    -   `app/frontend/src/services/backend.py`를 통해 백엔드와 통신
+### 3.1 API 계층 (`app/api/v1/`)
 
-### 2. 백엔드 (FastAPI)
--   **위치**: `app/`
--   **기술**: FastAPI (Python)
--   **기능**:
-    -   RESTful API 엔드포인트 제공
-    -   사용자 인증 및 권한 부여 (JWT 기반)
-    -   사용자 프로필 데이터 관리 (CRUD)
-    -   LLM(Large Language Model) 연동 및 응답 생성 (스트리밍 지원)
-    -   PostgreSQL 데이터베이스와의 모든 상호작용 처리
+#### `chat.py`
+- **목적**: 챗봇 관련 API 엔드포인트 정의
+- **주요 기능**:
+  - `POST /stream`: 사용자 질문에 대한 LLM 응답을 스트리밍으로 제공
+  - `POST /history`: 사용자의 채팅 히스토리 조회
+- **의존성**: `llm_manager`, `user_repository`
 
-### 3. 데이터베이스 (PostgreSQL)
--   **위치**: `app/db/database.py` (백엔드에서 접근)
--   **기술**: PostgreSQL, `psycopg2`
--   **기능**:
-    -   사용자 계정 정보 (이메일, 비밀번호 해시, UUID) 저장
-    -   사용자 프로필 정보 (이름, 생년월일, 성별, 거주지, 소득 수준 등) 저장
-    -   모든 데이터베이스 CRUD(Create, Read, Update, Delete) 작업 수행
+#### `user.py`
+- **목적**: 사용자 인증 및 프로필 관리 API 엔드포인트 정의
+- **주요 기능**:
+  - `POST /register`: 새 사용자 회원가입 (email → username, username → 프로필 이름)
+  - `POST /login`: 사용자 로그인 (JWT 토큰 발급)
+  - `GET /profile`: 현재 사용자 프로필 조회
+  - `PATCH /profile/{profile_id}`: 프로필 정보 수정
+  - `GET /profiles`: 모든 프로필 조회
+  - `POST /profile`: 새 프로필 추가
+  - `DELETE /profile/{profile_id}`: 프로필 삭제
+  - `PUT /profile/main/{profile_id}`: 메인 프로필 변경
+  - `DELETE /delete`: 사용자 계정 삭제
+- **의존성**: `user_repository`, `auth` (JWT 처리)
+- **필드 매핑**:
+  - 프론트엔드 `email` → DB `users.username` (아이디)
+  - 프론트엔드 `username` → DB `profiles.name` (사용자 이름)
+  - 프론트엔드 `password` → DB `users.password_hash` (해시된 비밀번호)
 
-### 4. LLM (Large Language Model)
--   **위치**: `app/backend/llm_manager.py` (백엔드에서 관리)
--   **기술**: LangChain, OpenAI API
--   **기능**:
-    -   사용자 질문과 프로필 정보를 바탕으로 맞춤형 답변 생성
-    -   스트리밍 응답 지원
+### 3.2 데이터베이스 계층 상세 (`app/db/`)
 
-## 실행 흐름 요약
+#### `db_core.py`
+- **목적**: 데이터베이스 핵심 연결 기능
+- **주요 기능**:
+  - PostgreSQL 연결 생성
+  - UUID 어댑터 등록 (psycopg2)
+  - 연결 풀 관리
+- **사용처**: 모든 DB 작업에서 호출
 
-1.  **서버 실행**:
-    -   **백엔드**: 프로젝트 루트 디렉토리에서 `uvicorn app.main:app --reload --port 8000` 명령어로 FastAPI 서버를 실행합니다. (`.env` 파일의 환경 변수가 `app/main.py`에서 로드됩니다.)
-    -   **프론트엔드**: `app/frontend` 디렉토리에서 `streamlit run app.py` 명령어로 Streamlit 앱을 실행합니다.
+#### `normalizer.py`
+- **목적**: 데이터 정규화 및 변환
+- **주요 함수**:
+  - `_normalize_birth_date()`: 생년월일 정규화
+  - `_normalize_sex()`: 성별 정규화 (남성/여성 → M/F)
+  - `_normalize_insurance_type()`: 건강보험 타입 정규화
+  - `_normalize_benefit_type()`: 기초생활보장 급여 정규화
+  - `_normalize_disability_grade()`: 장애 등급 정규화
+  - `_normalize_ltci_grade()`: 장기요양 등급 정규화
+  - `_normalize_pregnant_status()`: 임신 상태 정규화
+  - `_normalize_income_ratio()`: 소득 수준 정규화
 
-2.  **사용자 인증 (회원가입/로그인)**:
-    -   프론트엔드(`app/frontend/src/pages/login.py`)의 UI에서 사용자가 로그인/회원가입 정보를 입력합니다.
-    -   프론트엔드의 `app/frontend/src/services/backend.py` 모듈은 FastAPI 백엔드의 `/api/v1/user/register` 또는 `/api/v1/user/login` 엔드포인트로 HTTP 요청을 보냅니다.
-    -   백엔드(`app/api/v1/user.py`)는 요청을 받아 `app/db/database.py`를 통해 DB에서 사용자 정보를 검증하거나 생성합니다.
-    -   인증 성공 시, 백엔드는 JWT(JSON Web Token)를 생성하여 프론트엔드로 반환하고, 프론트엔드는 이 토큰을 세션에 저장하여 이후 요청에 사용합니다.
+#### `user_repository.py`
+- **목적**: Repository 패턴을 구현한 사용자 저장소
+- **주요 메서드**:
+  - `create_user_and_profile()`: 사용자 및 프로필 생성 (트랜잭션)
+  - `get_user_password_hash()`: 비밀번호 해시 조회
+  - `get_user_and_profile_by_id()`: UUID로 사용자 및 프로필 조회
+  - `get_user_by_username()`: username으로 사용자 조회
+  - `update_user_password()`: 비밀번호 업데이트
+  - `update_user_main_profile_id()`: 메인 프로필 변경
+  - `check_user_exists()`: 사용자 존재 여부 확인
+  - `delete_user_account()`: 사용자 계정 삭제
+  - `add_profile()`: 새 프로필 추가
+  - `update_profile()`: 프로필 정보 업데이트
+  - `delete_profile_by_id()`: 프로필 삭제
+  - `get_all_profiles_by_user_id()`: 사용자의 모든 프로필 조회
+- **특징**:
+  - 헬퍼 함수 `_transform_db_to_api()`: DB 데이터를 API 응답 형식으로 변환
+  - 모든 작업에서 normalizer 함수 사용
+  - 트랜잭션 기반 데이터 일관성 보장
 
-3.  **프로필 관리**:
-    -   프론트엔드(`app/frontend/src/pages/my_page.py`)에서 사용자가 프로필을 조회, 추가, 수정, 삭제합니다.
-    -   `backend_service.py`를 통해 백엔드의 `/api/v1/user/profile` 엔드포인트로 HTTP 요청을 보냅니다.
-    -   백엔드는 JWT 토큰을 검증하여 인증된 사용자만 프로필을 관리할 수 있도록 합니다.
+### 3.3 백엔드 비즈니스 로직 (`app/backend/`)
 
-4.  **챗봇 메시지 전송**:
-    -   프론트엔드(`app/frontend/src/pages/chat.py`)에서 사용자가 메시지를 입력하면, `backend_service.py`를 통해 백엔드의 `/api/v1/chat/stream` 엔드포인트로 스트리밍 요청을 보냅니다.
-    -   요청에는 대화 이력, 사용자 메시지, 현재 활성화된 프로필 정보가 포함됩니다.
-    -   백엔드(`app/api/v1/chat.py`)는 `app/backend/llm_manager.py`를 호출하여 LangChain과 OpenAI 모델을 통해 응답을 생성합니다.
-    -   생성된 응답은 FastAPI의 `StreamingResponse`를 통해 프론트엔드로 실시간 전송되며, UI에 표시됩니다.
+#### `api_server.py`
+- **목적**: FastAPI 애플리케이션 설정 및 라우터 등록
+- **주요 기능**:
+  - FastAPI 앱 인스턴스 생성
+  - CORS 미들웨어 설정
+  - 예외 처리 미들웨어
+  - API 라우터 등록
+- **사용처**: `app/main.py`에서 임포트되어 ��용
 
-5.  **데이터 관리**:
-    -   모든 사용자 및 프로필 관련 데이터는 PostgreSQL 데이터베이스에 저장됩니다.
-    -   백엔드의 `app/db/database.py` 모듈이 DB와의 모든 상호작용(CRUD)을 담당합니다.
-    -   **프론트엔드는 데이터베이스에 직접 접근하지 않으며**, 항상 FastAPI 백엔드 API를 통해서만 데이터를 요청하고 수정합니다.
+#### `llm_manager.py`
+- **목적**: LLM 모델 연동 및 관리
+- **주요 기능**:
+  - LLM 모델 초기화 및 로드
+  - 사용자 질문에 대한 프롬프트 생성
+  - LLM 모델 호출
+  - 응답 스트리밍 처리
+- **사용처**: `app/api/v1/chat.py`에서 호출
 
-## 주요 변경 사항 요약
+#### `models.py`
+- **목적**: 백엔드 내부 데이터 모델 정의
+- **주요 모델**:
+  - `ChatRequest`: 채팅 요청 데이터
+  - `ChatResponse`: 채팅 응답 데이터
+  - `UserProfile`: 사용자 프로필 데이터
+  - 기타 내부 데이터 모델
 
-### 1. 아키텍처 분리 및 역할 명확화
--   **프론트엔드 (Streamlit)**: UI 렌더링 및 사용자 상호작용에만 집중하며, 모든 데이터 관련 로직은 백엔드 API 호출로 전환되었습니다. `app/frontend/src/pages/login.py`, `app/frontend/src/pages/my_page.py`, `app/frontend/src/pages/settings.py`, `app/frontend/app.py` 등에서 데이터베이스 직접 접근 코드가 `app/frontend/src/services/backend.py`를 통한 API 호출로 대체되었습니다.
--   **백엔드 (FastAPI)**: 인증, 프로필 관리, LLM 연동, 데이터베이스 상호작용 등 모든 비즈니스 로직을 담당하는 RESTful API 서버로 기능이 통합되었습니다.
+### 3.4 프론트엔드 (`app/frontend/`)
 
-### 2. 파일 구조 및 모듈 정리
--   **`app/backend/api_server.py` 삭제**: `app/main.py`를 단일 진입점으로 사용하여 서버 실행의 혼란을 제거했습니다.
--   **`app/schemas.py` 통합 및 개선**: 사용자, 프로필, 토큰 관련 Pydantic 모델들이 `app/schemas.py`로 통합되어 일관성을 확보하고, `UserProfileUpdate` 스키마가 제거되었습니다.
--   **`app/api/v1/user.py` 구현**: 사용자 인증 및 프로필 관리 API 엔드포인트가 실제 데이터베이스 연동 로직과 함께 구현되었습니다.
--   **`app/frontend/src/sign.py` 삭제**: 역할이 모호하고 중복되던 파일이 제거되었습니다.
--   **`app/frontend/src/services/backend.py` 확장**: 로그인, 회원가입, 프로필 조회/수정/삭제 등 사용자 관련 백엔드 API 호출 함수들이 추가되었습니다.
--   **`app/main.py` 환경 변수 로드 시점 수정**: `load_dotenv()` 호출이 다른 모듈 import 전에 이루어지도록 최상단으로 이동하여 환경 변수 로드 문제를 해결했습니다.
+#### `app.py`
+- **목적**: Streamlit 애플리케이션의 메인 진입점
+- **주요 기능**:
+  - 세션 상태 초기화
+  - 로그인 상태에 따른 페이지 라우팅
+  - 전체 레이아웃 관리 (사이드바, 메인 콘텐츠)
 
-### 3. 데이터베이스 관련 파일 정리 (벡터 검색 기능 제거)
--   **다음 파일들이 삭제되었습니다**:
-    -   `app/db/policy_repository.py` (벡터 검색 및 RAG 관련)
-    -   `app/db/user_repository.py` (기존 `database.py`와 중복되는 사용자 관련 DB 로직)
-    -   `app/db/normalizer.py` (데이터 정규화 로직, `database.py`로 통합)
-    -   `app/db/db_core.py` (기존 `database.py`와 중복되는 DB 연결 로직)
-    -   `app/db/config.py` (환경 변수 로드 및 DB 설정, `main.py` 및 `database.py`로 통합)
--   **`app/db/database.py`**: 모든 PostgreSQL 데이터베이스 CRUD 및 사용자 인증 관련 로직을 담당하도록 통합 및 개선되었습니다.
+#### `src/pages/login.py`
+- **목적**: 로그인 및 회원가입 페이지
+- **주요 기능**:
+  - 로그인 폼 렌더링
+  - 회원가입 폼 렌더링
+  - 사용자 입력 검증
+  - `backend_service`를 통한 API 호출
 
-### 4. 기타 개선 사항
--   `app/auth.py`에서 JWT 토큰의 `sub` 필드에 `username` 대신 `email`을 사용하도록 변경되었습니다.
--   FastAPI의 의존성 주입(`Depends`)을 활용하여 DB 세션(`get_db`)을 올바르게 관리하도록 `app/db/database.py`에 함수가 추가되었습니다.
+#### `src/pages/chat.py`
+- **목적**: 메인 챗봇 인터페이스
+- **주요 기능**:
+  - 메시지 입력 UI
+  - 메시지 히스토리 표시
+  - `backend_service.stream_chat()`을 통한 스트리밍 응답 처리
+  - 실시간 응답 표시
 
-이러한 변경을 통해 프로젝트는 더욱 견고하고 유지보수하기 쉬운 구조를 갖추게 되었습니다.
+#### `src/backend_service.py`
+- **목적**: 프론트엔드와 백엔드 간의 통신을 담당하는 클라이언트
+- **주요 메서드**:
+  - `login(email, password)`: 로그인 요청
+  - `register(email, password, name)`: 회원가입 요청
+  - `stream_chat(message)`: 채팅 스트리밍 요청
+  - `get_profile()`: 프로필 조회
+  - `update_profile(profile_data)`: 프로필 수정
+- **중요성**: UI 컴포넌트가 직접 API를 호출하지 않고 이 서비스를 통해 통신
+
+#### `src/state_manger.py`
+- **목적**: Streamlit 세션 상태 관리
+- **주요 기능**:
+  - 초기 상태 설정
+  - 로그인 상태 관리
+  - 사용자 정보 저장
+  - 채팅 히스토리 관리
+
+## 4. 데이터 흐름
+
+### 4.1 사용자 인증 흐름
+```
+사용자 입력 (로그인/회원가입)
+    ↓
+frontend/src/pages/login.py
+    ↓
+backend_service.login() / backend_service.register()
+    ↓
+HTTP POST 요청
+    ↓
+FastAPI: /api/v1/user/login, /api/v1/user/register
+    ↓
+app/api/v1/user.py (라우터)
+    ↓
+app/db/user_repository.py (사용자 검증/생성)
+    ↓
+PostgreSQL Database
+    ↓
+JWT 토큰 생성 및 반환
+    ↓
+Streamlit 세션에 저장
+    ↓
+프론트엔드 상태 업데이트
+```
+
+### 4.2 챗봇 상호작용 흐름
+```
+사용자 질문 입력
+    ↓
+frontend/src/pages/chat.py
+    ↓
+backend_service.stream_chat(message)
+    ↓
+HTTP POST 요청 (스트리밍)
+    ↓
+FastAPI: /api/v1/chat/stream
+    ↓
+app/api/v1/chat.py (라우터)
+    ↓
+app/backend/llm_manager.py (LLM 처리)
+    ├─ 프롬프트 생성
+    ├─ LLM 모델 호출
+    └─ 응답 생성
+    ↓
+스트리밍 응답 반환
+    ↓
+프론트엔드에서 실시간 표시
+```
+
+### 4.3 프로필 관리 흐름
+```
+사용자 프로필 수정 요청
+    ↓
+frontend/src/pages/my_page.py
+    ↓
+backend_service.update_profile(profile_data)
+    ↓
+HTTP PUT 요청
+    ↓
+FastAPI: /api/v1/user/profile
+    ↓
+app/api/v1/user.py (라우터)
+    ↓
+app/db/user_repository.py (데이터 업데이트)
+    ↓
+PostgreSQL Database
+    ↓
+업데이트 결과 반환
+    ↓
+프론트엔드 상태 업데이트
+```
+
+## 5. 기술 스택
+
+- **백엔드**: FastAPI, Python 3.8+, PostgreSQL, psycopg2
+- **프론트엔드**: Streamlit, Python 3.8+, requests
+- **인증**: JWT (JSON Web Tokens), passlib
+- **LLM**: LLM 모델 연동 (llm_manager)
+- **데이터베이스**: PostgreSQL
+
+## 6. 실행 방법
+
+### 6.1 백엔드 실행
+```bash
+cd app
+python main.py
+# 또는
+uvicorn app.main:app --reload --port 8000
+```
+
+### 6.2 프론트엔드 실행
+```bash
+cd app/frontend
+streamlit run app.py
+```
+
+## 7. 개발 체크리스트
+
+### 백엔드 개발 (`app/api`, `app/backend`, `app/db`)
+- [ ] `app/db/config.py`: 데이터베이스 연결 설정
+- [ ] `app/db/database.py`: 기본 CRUD 함수 구현
+- [ ] `app/db/user_repository.py`: Repository 패턴 구현
+- [ ] `app/backend/models.py`: 데이터 모델 정의
+- [ ] `app/backend/llm_manager.py`: LLM 연동 로직 구현
+- [ ] `app/backend/api_server.py`: FastAPI 서버 설정
+- [ ] `app/api/v1/user.py`: 사용자 인증 API 구현
+- [ ] `app/api/v1/chat.py`: 챗봇 API 구현
+- [ ] `app/main.py`: 메인 진입점 설정
+
+### 프론트엔드 개발 (`app/frontend`)
+- [ ] `app/frontend/src/state_manger.py`: 세션 상태 관리
+- [ ] `app/frontend/src/backend_service.py`: 백엔드 API 클라이언트
+- [ ] `app/frontend/src/utils/session_manager.py`: 세션 관리 유틸리티
+- [ ] `app/frontend/src/pages/login.py`: 로그인/회원가입 페이지
+- [ ] `app/frontend/src/pages/chat.py`: 챗봇 페이지
+- [ ] `app/frontend/src/pages/my_page.py`: 마이페이지
+- [ ] `app/frontend/src/pages/settings.py`: 설정 페이지
+- [ ] `app/frontend/src/widgets/auth_widgets.py`: 인증 위젯
+- [ ] `app/frontend/src/widgets/sidebar.py`: 사이드바 위젯
+- [ ] `app/frontend/src/widgets/policy_card.py`: 정책 카드 위젯
+- [ ] `app/frontend/app.py`: 메인 진입점
+
+## 8. 주요 개발 포인트
+
+### 백엔드
+1. **데이터베이스 연결**: PostgreSQL 연결 풀 설정 및 관리
+2. **사용자 인증**: JWT 토큰 기반 인증 구현
+3. **LLM 통합**: LLM 모델 호출 및 스트리밍 응답 처리
+4. **에러 처리**: 적절한 HTTP 상태 코드 및 에러 메시지 반환
+
+### 프론트엔드
+1. **세션 관리**: Streamlit 세션 상태를 통한 로그인 상태 유지
+2. **API 통신**: `backend_service`를 통한 일관된 API 호출
+3. **UI/UX**: 직관적인 사용자 인터페이스 구현
+4. **실시간 업데이트**: 스트리밍 응답 처리 및 실시간 표시
+
+## 9. 회원가입 및 로그인 흐름 상세
+
+### 9.1 회원가입 흐름
+```
+프론트엔드 (login.py)
+├─ 사용자 입력: email (아이디), username (이름), password
+│
+└─ backend_service.register_user()
+   │
+   └─ POST /api/v1/user/register
+      │
+      └─ app/api/v1/user.py (register_user)
+         ├─ 아이디 중복 확인
+         ├─ 비밀번호 해시 (bcrypt)
+         │
+         └─ db_ops.create_user_and_profile()
+            │
+            ├─ 1. users 테이블 삽입
+            │   ├─ id: UUID 생성
+            │   ├─ username: email 값 저장
+            │   ├─ password_hash: 해시된 비밀번호
+            │   └─ id_uuid: UUID 복사본
+            │
+            ├─ 2. profiles 테이블 삽입
+            │   ├─ user_id: users.id 참조
+            │   ├─ name: username 값 저장
+            │   ├─ 기타 필드: normalizer로 정규화
+            │   └─ RETURNING id (새 profile_id)
+            │
+            ├─ 3. collections 테이블 삽입
+            │   └─ 초기 컬렉션 데이터
+            │
+            └─ 4. users.main_profile_id 업데이트
+               └─ 새로 생성된 profile_id 저장
+```
+
+### 9.2 로그인 흐름
+```
+프론트엔드 (login.py)
+├─ 사용자 입력: email (아이디), password
+│
+└─ backend_service.login_user()
+   │
+   └─ POST /api/v1/user/login
+      │
+      └─ app/api/v1/user.py (login_user)
+         ├─ db_ops.get_user_password_hash(email)
+         │  └─ users 테이블에서 username=email로 조회
+         │
+         ├─ 비밀번호 검증 (bcrypt.verify)
+         │
+         └─ JWT 토큰 생성
+            ├─ payload: {"sub": email}
+            ├─ 만료 시간: 30분
+            └─ 토큰 반환
+```
+
+### 9.3 자동 로그인 흐름 (회원가입 후)
+```
+회원가입 성공
+│
+└─ handle_signup_submit()
+   │
+   ├─ 1. 회원가입 성공 확인
+   │
+   └─ 2. 자동 로그인 시도
+      └─ backend_service.login_user(email, password)
+         │
+         └─ JWT 토큰 획득
+            │
+            └─ 세션에 토큰 저장
+               │
+               └─ 프론트엔드 상태 업데이트
+                  └─ is_logged_in = True
+```
+
+## 10. 환경 설정
+
+프로젝트 실행 전 다음 파일들을 확인하세요:
+- `requirements.txt`: Python 의존성 설치
+- `app/db/config.py`: 데이터베이스 연결 설정
+- `.env` (필요시): 환경 변수 설정 (DB 비밀번호, API 키 등)

@@ -155,7 +155,7 @@ def render_login_tab():
 
 
 def handle_signup_submit(signup_data: Dict[str, Any]):
-    if not signup_data.get("userId") or not signup_data.get("password"):
+    if not signup_data.get("username") or not signup_data.get("password"):
         return False, "필수 정보를 입력해주세요."
 
     if signup_data.get("password") != signup_data.get("confirmPassword"):
@@ -167,7 +167,7 @@ def handle_signup_submit(signup_data: Dict[str, Any]):
     if success:
         # 회원가입 성공 후 바로 로그인 처리
         login_ok, login_data = backend_service.login_user(
-            signup_data.get("userId"), signup_data.get("password")
+            signup_data.get("username"), signup_data.get("password")
         )
         if login_ok:
             st.session_state["is_logged_in"] = True
@@ -369,8 +369,14 @@ def render_signup_tab():
                 return
 
             # ... (기존의 데이터 수집 및 제출 로직은 동일) ...
+            # incomeLevel을 float로 변환
+            try:
+                income_value = float(st.session_state.signup_income) if st.session_state.signup_income else 0.0
+            except (ValueError, TypeError):
+                income_value = 0.0
+            
             signup_data = {
-                "userId": user_id_value,
+                "username": user_id_value,  # 백엔드에서 email로 사용됨
                 "password": st.session_state.signup_pw,
                 "confirmPassword": st.session_state.signup_pw_confirm,
                 "name": st.session_state.get("signup_name", ""),
@@ -378,7 +384,7 @@ def render_signup_tab():
                 "birthDate": st.session_state.signup_birthdate,
                 "location": st.session_state.signup_location,
                 "healthInsurance": st.session_state.signup_health,
-                "incomeLevel": st.session_state.signup_income,
+                "incomeLevel": income_value,  # float로 변환
                 "basicLivelihood": st.session_state.signup_basic,
                 "disabilityLevel": disability_map.get(selected_disability, "0"),
                 "longTermCare": longterm_map.get(selected_longterm, "NONE"),

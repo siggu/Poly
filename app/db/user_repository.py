@@ -89,7 +89,7 @@ def _transform_db_to_api(user_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
-    새로운 사용자의 인증 정보 (users), 기본 프로필 (profiles),
+    새로운 사용자의 인증 ���보 (users), 기본 프로필 (profiles),
     및 초기 컬렉션 (collections) 정보를 트랜잭션으로 삽입합니다.
     """
     conn = get_db_connection()
@@ -102,15 +102,17 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
     if not username or not password_hash:
         return False, "아이디와 비밀번호는 필수 입력 항목입니다."
 
-    new_user_id = str(uuid.uuid4())
+    new_user_id = str(uuid.uuid4())  # UUID를 문자열로 변환
 
     try:
         with conn.cursor() as cursor:
             user_insert_query = """
-            INSERT INTO users (id, username, password_hash, created_at, updated_at)
-            VALUES (%s, %s, %s, NOW(), NOW());
+            INSERT INTO users (id, username, password_hash, main_profile_id, created_at, updated_at, id_uuid)
+            VALUES (%s::uuid, %s, %s, %s, NOW(), NOW(), %s::uuid);
             """
-            cursor.execute(user_insert_query, (new_user_id, username, password_hash))
+            cursor.execute(
+                user_insert_query, (new_user_id, username, password_hash, new_user_id)
+            )
             logger.info(f"1. users 테이블에 삽입 완료. user_id: {new_user_id}")
 
             # ******* normalizer 모듈을 사용하여 데이터 정규화 *******
@@ -136,16 +138,15 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
 
             profile_insert_query = """
             INSERT INTO profiles (
-                user_id, name, birth_date, sex, residency_sgg_code, insurance_type,
+                user_id,  birth_date, sex, residency_sgg_code, insurance_type,
                 median_income_ratio, basic_benefit_type, disability_grade,
-                ltci_grade, pregnant_or_postpartum12m, updated_at
+                ltci_grade, pregnant_or_postpartum12m, updated_at, name,
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             RETURNING id; 
             """
             profile_data_tuple = (
                 new_user_id,
-                name,
                 birth_date_str,
                 sex,
                 residency_sgg_code,
@@ -155,6 +156,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
                 disability_grade,
                 ltci_grade,
                 pregnant_or_postpartum12m,
+                name,
             )
             cursor.execute(profile_insert_query, profile_data_tuple)
             new_profile_id = cursor.fetchone()[0]
@@ -212,13 +214,19 @@ def get_user_password_hash(username: str) -> Optional[str]:
     """DB에서 사용자의 비밀번호 해시를 조회합니다."""
     conn = get_db_connection()
     if not conn:
+        logger.error(f"DB 연결 실패: {username}")
         return None
     try:
         query = "SELECT password_hash FROM users WHERE username = %s"
         with conn.cursor() as cursor:
             cursor.execute(query, (username,))
             result = cursor.fetchone()
-            return result[0] if result else None
+            if result:
+                logger.info(f"비밀번호 해시 조회 성공: {username}")
+                return result[0]
+            else:
+                logger.warning(f"사용자를 찾을 수 없음: {username}")
+                return None
     except Exception as e:
         logger.error(f"비밀번호 해시 조회 중 오류: {username} - {e}")
         return None
@@ -234,15 +242,17 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Dict[str, Any]]:
         return False, {"error": "DB 연결 실패"}
 
     try:
+        # ✅ 수정: u.main_profile_id = p.id로 JOIN
         query = """
         SELECT 
             u.id AS "id", u.username AS "username", u.main_profile_id AS "main_profile_id",
-            p.birth_date AS "birthDate", p.sex AS "gender", p.residency_sgg_code AS "location", 
-            p.insurance_type AS "healthInsurance", p.median_income_ratio AS "incomeLevel",
-            p.basic_benefit_type AS "basicLivelihood", p.disability_grade AS "disabilityLevel",
-            p.ltci_grade AS "longTermCare", p.pregnant_or_postpartum12m AS "pregnancyStatus"
+            p.birth_date AS "birthDate", p.sex AS "gender", 
+            p.residency_sgg_code AS "location", p.insurance_type AS "healthInsurance", 
+            p.median_income_ratio AS "incomeLevel", p.basic_benefit_type AS "basicLivelihood", 
+            p.disability_grade AS "disabilityLevel", p.ltci_grade AS "longTermCare", 
+            p.pregnant_or_postpartum12m AS "pregnancyStatus", p.name AS "name"
         FROM users u
-        LEFT JOIN profiles p ON u.id = p.user_id
+        LEFT JOIN profiles p ON u.main_profile_id = p.id
         WHERE u.id = %s
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -272,13 +282,15 @@ def get_user_by_username(username: str) -> Tuple[bool, Dict[str, Any]]:
         return False, {"error": "DB 연결 실패"}
 
     try:
+        # ✅ 이미 올바름: u.id = p.user_id
         query = """
         SELECT 
             u.id AS "id", u.username AS "username", u.main_profile_id AS "main_profile_id",
-            p.birth_date AS "birthDate", p.sex AS "gender", p.residency_sgg_code AS "location", 
-            p.insurance_type AS "healthInsurance", p.median_income_ratio AS "incomeLevel",
-            p.basic_benefit_type AS "basicLivelihood", p.disability_grade AS "disabilityLevel",
-            p.ltci_grade AS "longTermCare", p.pregnant_or_postpartum12m AS "pregnancyStatus"
+            p.birth_date AS "birthDate", p.sex AS "gender", 
+            p.residency_sgg_code AS "location", p.insurance_type AS "healthInsurance", 
+            p.median_income_ratio AS "incomeLevel", p.basic_benefit_type AS "basicLivelihood", 
+            p.disability_grade AS "disabilityLevel", p.ltci_grade AS "longTermCare", 
+            p.pregnant_or_postpartum12m AS "pregnancyStatus", p.name AS "name" 
         FROM users u
         LEFT JOIN profiles p ON u.id = p.user_id
         WHERE u.username = %s
@@ -444,16 +456,15 @@ def add_profile(
 
             query = """
             INSERT INTO profiles (
-                user_id, name, birth_date, sex, residency_sgg_code, insurance_type,
+                user_id,birth_date, sex, residency_sgg_code, insurance_type,
                 median_income_ratio, basic_benefit_type, disability_grade,
-                ltci_grade, pregnant_or_postpartum12m, updated_at
+                ltci_grade, pregnant_or_postpartum12m, updated_at, name
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
             RETURNING id;
             """
             data_tuple = (
                 user_uuid,
-                name,
                 birth_date_str,
                 sex,
                 residency_sgg_code,
@@ -463,6 +474,7 @@ def add_profile(
                 disability_grade,
                 ltci_grade,
                 pregnant_or_postpartum12m,
+                name,
             )
             cursor.execute(query, data_tuple)
             new_profile_id = cursor.fetchone()[0]
@@ -491,7 +503,6 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
         with conn.cursor() as cursor:
             # **[수정] 인바운드 매핑 로직 제거 및 normalizer 함수 사용으로 통일**
             birth_date_str = _normalize_birth_date(profile_data.get("birthDate"))
-            name = profile_data.get("name", "").strip() or None
             sex = _normalize_sex(profile_data.get("gender", ""))
             residency_sgg_code = profile_data.get("location", "").strip() or None
             insurance_type = _normalize_insurance_type(
@@ -510,17 +521,19 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             pregnant_or_postpartum12m = _normalize_pregnant_status(
                 profile_data.get("pregnancyStatus", "없음")
             )
+            name = profile_data.get("name", "").strip() or None
+
             # *******************************************************
 
             query = """
             UPDATE profiles SET
-                name = %s, birth_date = %s, sex = %s, residency_sgg_code = %s, insurance_type = %s,
+                birth_date = %s, sex = %s, residency_sgg_code = %s, insurance_type = %s,
                 median_income_ratio = %s, basic_benefit_type = %s, disability_grade = %s,
-                ltci_grade = %s, pregnant_or_postpartum12m = %s, updated_at = NOW()
+                ltci_grade = %s, pregnant_or_postpartum12m = %s, updated_at = NOW(), name = %s
             WHERE id = %s;
             """
             data_tuple = (
-                name,
+                profile_id,
                 birth_date_str,
                 sex,
                 residency_sgg_code,
@@ -530,7 +543,7 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
                 disability_grade,
                 ltci_grade,
                 pregnant_or_postpartum12m,
-                profile_id,
+                name,
             )
             cursor.execute(query, data_tuple)
             conn.commit()
@@ -583,14 +596,15 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
 
     try:
         query = """
-        SELECT 
-            p.id, p.user_id, p.name AS "name", p.birth_date AS "birthDate", p.sex AS "gender",
+        SELECT
+            p.id, p.birth_date AS "birthDate", p.sex AS "gender",
             p.residency_sgg_code AS "location", p.insurance_type AS "healthInsurance",
             p.median_income_ratio AS "incomeLevel", p.basic_benefit_type AS "basicLivelihood",
             p.disability_grade AS "disabilityLevel", p.ltci_grade AS "longTermCare",
-            p.pregnant_or_postpartum12m AS "pregnancyStatus"
+            p.pregnant_or_postpartum12m AS "pregnancyStatus", p.user_id, p.name AS "name"
         FROM profiles p
-        WHERE p.user_id = %s;
+        WHERE p.user_id = %s
+        ORDER BY p.id; -- 정렬 기준 추가
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(query, (user_uuid,))
@@ -600,16 +614,14 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
             for profile in profiles:
                 p_dict = dict(profile)
 
-                # **[수정] 목록 조회에서도 후처리 헬퍼 함수를 사용하여 중복 제거**
-                # _transform_db_to_api를 프로필 목록 조회에 맞게 간소화하거나,
-                # p.id와 p.user_id 키가 포함되도록 수정된 버전을 사용
-                # 여기서는 _transform_db_to_api를 사용하여 변환하고, 필요 없는 키는 제거함
+                # _transform_db_to_api 대신 전용 헬퍼 함수를 사용하는 것이 더 명확합니다.
+                # 그러나 기존 _transform_db_to_api를 그대로 사용하려면 다음과 같이 유지합니다.
                 transformed = _transform_db_to_api(p_dict)
-
-                # 프로필 목록 조회에서 불필요한 키는 제거 (main_profile_id, userId, username)
                 transformed.pop("main_profile_id", None)
-                transformed.pop("userId", None)
-                # transformed.pop("username", None)
+                transformed.pop("userId", None)  # userId는 username을 의미하므로 제거
+
+                # **또는**
+                # transformed = _transform_profile_list_to_api(p_dict)
 
                 result_profiles.append(transformed)
 

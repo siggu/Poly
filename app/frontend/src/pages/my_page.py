@@ -46,7 +46,8 @@ def is_profile_incomplete(profile):
 
 def handle_profile_switch(profile_id):
     for p in st.session_state.profiles:
-        p["isActive"] = p["id"] == profile_id
+        p_id = p.get('id') or p.get('user_id')
+        p["isActive"] = p_id == profile_id
     # 영구 저장
     token = _get_auth_token()
     if token:
@@ -74,18 +75,18 @@ def handle_delete_profile(profile_id):
 
             # 삭제된 프로필이 활성 프로필이었다면, 새로운 활성 프로필 설정
             is_active_deleted = any(
-                p["id"] == profile_id and p.get("isActive")
+                (p.get('id') or p.get('user_id')) == profile_id and p.get("isActive")
                 for p in st.session_state.profiles
             )
 
             # 로컬 세션에서도 삭제
             st.session_state.profiles = [
-                p for p in st.session_state.profiles if p["id"] != profile_id
+                p for p in st.session_state.profiles if (p.get('id') or p.get('user_id')) != profile_id
             ]
 
             if is_active_deleted and st.session_state.profiles:
                 # 남은 프로필 중 첫 번째를 새 활성 프로필로 지정
-                new_active_profile_id = st.session_state.profiles[0]["id"]
+                new_active_profile_id = st.session_state.profiles[0].get('id') or st.session_state.profiles[0].get('user_id')
                 success_activate, msg_activate = backend_service.set_main_profile(
                     token, new_active_profile_id
                 )
@@ -185,7 +186,8 @@ def _refresh_profiles_from_db():
         if ok and profiles_list:
             main_profile_id = _get_user_main_profile_id()
             for p in profiles_list:
-                p["isActive"] = p["id"] == main_profile_id
+                p_id = p.get('id') or p.get('user_id')
+                p["isActive"] = p_id == main_profile_id
             st.session_state.profiles = profiles_list
             return True
     return False
@@ -328,8 +330,9 @@ def render_my_page_modal():
             st.write(f"- 생년월일: {birth_display}")
             st.write(f"- 거주지: {active_profile.get('location', '미입력')}")
         with col_edit:
-            if st.button("✏️", key=f"btn_edit_profile_{active_profile['id']}"):
-                st.session_state["editingProfileId"] = active_profile["id"]
+            profile_id = active_profile.get('id') or active_profile.get('user_id')
+            if st.button("✏️", key=f"btn_edit_profile_{profile_id}"):
+                st.session_state["editingProfileId"] = profile_id
                 st.session_state["editingData"] = active_profile.copy()
                 st.rerun()
     else:
@@ -414,12 +417,14 @@ def render_my_page_modal():
                 f"- {profile.get('name', '무명')} ({profile.get('location','미입력')})"
             )
         with cols[1]:
-            if st.button("선택", key=f"select_{profile['id']}"):
-                handle_profile_switch(profile["id"])
+            profile_id = profile.get('id') or profile.get('user_id')
+            if st.button("선택", key=f"select_{profile_id}"):
+                handle_profile_switch(profile_id)
                 # handle_profile_switch already saves to DB and reruns
         with cols[2]:
-            if st.button("삭제", key=f"del_{profile['id']}"):
-                handle_delete_profile(profile["id"])
+            profile_id = profile.get('id') or profile.get('user_id')
+            if st.button("삭제", key=f"del_{profile_id}"):
+                handle_delete_profile(profile_id)
     st.markdown("---")
 
     # 계정 관련 액션 (비밀번호 변경/회원 탈퇴/로그아웃)

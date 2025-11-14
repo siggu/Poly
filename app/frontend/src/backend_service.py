@@ -105,9 +105,9 @@ class BackendService:
         """회원가입 API를 호출합니다."""
         url = f"{FASTAPI_BASE_URL}/api/v1/user/register"
         payload = {
-            "email": user_data.get("username"),  # UI의 userId가 백엔드의 email
+            "username": user_data.get("username"),
             "password": user_data.get("password"),
-            "username": user_data.get("name"),
+            
         }
         try:
             response = requests.post(url, json=payload, timeout=10)
@@ -119,10 +119,10 @@ class BackendService:
         except requests.exceptions.RequestException as e:
             return False, f"백엔드 연결 실패: {e}"
 
-    def login_user(self, email: str, password: str) -> Tuple[bool, Any]:
+    def login_user(self, username: str, password: str) -> Tuple[bool, Any]:
         """로그인 API를 호출하고 성공 시 토큰을 반환합니다."""
         url = f"{FASTAPI_BASE_URL}/api/v1/user/login"
-        payload = {"email": email, "password": password}
+        payload = {"username": username, "password": password}
         try:
             response = requests.post(url, json=payload, timeout=10)
             if response.status_code == 200:

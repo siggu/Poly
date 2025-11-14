@@ -21,7 +21,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# url = "http://localhost:5000"
 
 # ==============================================================================
 # 0. 전역 설정 및 CSS 주입

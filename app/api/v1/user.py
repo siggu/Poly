@@ -38,7 +38,7 @@ def get_current_active_user(
     """
     유효한 토큰으로부터 DB에서 현재 활성화된 사용자 객체(dict)를 조회합니다.
     """
-    if token_data.email is None:
+    if token_data.username is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="토큰에 사용자 정보가 없습니다.",
@@ -82,21 +82,34 @@ def get_current_active_user(
 async def register_user(user_data: UserCreate, db: Any = Depends(get_db)):
     """
     새로운 사용자를 등록합니다.
-    - **email**: 사용자 이메일 (고유해야 함)
+    요청 본문에는 다음 필드가 포함되어야 합니다:
     - **password**: 사용자 비밀번호
-    - **username**: 사용자 이름
+    - **username**: 사용자 이름 (프로필 이름)
     """
-    if db_ops.check_user_exists(user_data.email):
+    # 이미 존재하는 사용자 확인
+    if db_ops.check_user_exists(user_data.username):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="이미 존재하는 이메일입니다."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 존재하는 아이디입니다.",
         )
 
     hashed_password = pwd_context.hash(user_data.password)
 
     # 회원가입 시 프로필 데이터도 함께 생성
-    full_user_data = user_data.model_dump()
-    full_user_data["password_hash"] = hashed_password
-    full_user_data["name"] = user_data.username  # 기본 프로필 이름
+    full_user_data = {
+        "username": user_data.username,  # email 필드 → DB username 컬럼
+        "password_hash": hashed_password,  # 해시된 비밀번호
+        "name": user_data.username,  # username 필��� → 프로필 이름
+        "gender": "M",  # 기본값
+        "birthDate": None,
+        "location": None,
+        "healthInsurance": None,
+        "incomeLevel": 0.0,
+        "basicLivelihood": "NONE",
+        "disabilityLevel": "0",
+        "longTermCare": "NONE",
+        "pregnancyStatus": "없음",
+    }
 
     ok, message = db_ops.create_user_and_profile(full_user_data)
 
@@ -113,16 +126,18 @@ async def login_user(user_data: UserLogin, db: Any = Depends(get_db)):
     """
     사용자 인증을 처리하고, 성공 시 JWT Access Token을 반환합니다.
     """
-    stored_hash = db_ops.get_user_password_hash(user_data.email)
+    # DB에서 사용자 정보 조회
+    stored_hash = db_ops.get_user_password_hash(user_data.username)
 
     if not stored_hash or not pwd_context.verify(user_data.password, stored_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="잘못된 이메일 또는 비밀번호입니다.",
+            detail="잘못된 아이디 또는 비밀번호입니다.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user_data.email})
+    # JWT 토큰에 username을 저장
+    access_token = create_access_token(data={"sub": user_data.username})
     return Token(access_token=access_token, token_type="bearer")
 
 
@@ -139,15 +154,16 @@ async def get_user_profile(current_user: dict = Depends(get_current_active_user)
     # get_current_active_user가 반환하는 dict를 User 스키마에 맞게 변환
     return User(
         id=current_user.get("main_profile_id"),
-        email=current_user.get("username"),  # DB 스키마상 username이 email
-        username=current_user.get("name"),
+        username=current_user.get("username"),
         created_at=current_user.get("created_at"),
         updated_at=current_user.get("updated_at"),
         profile=UserProfile(**current_user),
     )
 
 
-@router.patch("/profile/{profile_id}", response_model=SuccessResponse, summary="특정 프로필 수정")
+@router.patch(
+    "/profile/{profile_id}", response_model=SuccessResponse, summary="특정 프로필 수정"
+)
 async def update_user_profile(
     profile_id: int,
     update_data: UserProfile,
@@ -171,7 +187,9 @@ async def update_user_profile(
         raise HTTPException(status_code=500, detail="프로필 수정에 실패했습니다.")
 
 
-@router.get("/profiles", response_model=List[UserProfileWithId], summary="모든 프로필 조회")
+@router.get(
+    "/profiles", response_model=List[UserProfileWithId], summary="모든 프로필 조회"
+)
 async def get_all_user_profiles(current_user: dict = Depends(get_current_active_user)):
     """
     인증된 사용자의 모든 프로필 목록을 조회합니다.
@@ -179,11 +197,18 @@ async def get_all_user_profiles(current_user: dict = Depends(get_current_active_
     user_uuid = current_user.get("user_uuid")
     ok, profiles = db_ops.get_all_profiles_by_user_id(user_uuid)
     if not ok:
-        raise HTTPException(status_code=500, detail="프로필 목록을 가져오는 데 실패했습니다.")
+        raise HTTPException(
+            status_code=500, detail="프로필 목록을 가져오는 데 실패했습니다."
+        )
     return profiles
 
 
-@router.post("/profile", response_model=UserProfileWithId, status_code=status.HTTP_201_CREATED, summary="새 프로필 추가")
+@router.post(
+    "/profile",
+    response_model=UserProfileWithId,
+    status_code=status.HTTP_201_CREATED,
+    summary="새 프로필 추가",
+)
 async def add_new_profile(
     profile_data: UserProfile,
     current_user: dict = Depends(get_current_active_user),
@@ -195,13 +220,15 @@ async def add_new_profile(
     ok, new_profile_id = db_ops.add_profile(user_uuid, profile_data.model_dump())
     if not ok:
         raise HTTPException(status_code=500, detail="프로필 추가에 실패했습니다.")
-    
+
     # 추가된 프로필 정보를 다시 조회하여 반환
     # 이 부분은 간단하게 입력받은 데이터에 id만 추가하여 반환할 수도 있습니다.
     return UserProfileWithId(id=new_profile_id, **profile_data.model_dump())
 
 
-@router.delete("/profile/{profile_id}", response_model=SuccessResponse, summary="특정 프로필 삭제")
+@router.delete(
+    "/profile/{profile_id}", response_model=SuccessResponse, summary="특정 프로필 삭제"
+)
 async def delete_user_profile(
     profile_id: int,
     current_user: dict = Depends(get_current_active_user),
@@ -215,7 +242,11 @@ async def delete_user_profile(
         raise HTTPException(status_code=500, detail="프로필 삭제에 실패했습니다.")
 
 
-@router.put("/profile/main/{profile_id}", response_model=SuccessResponse, summary="메인 프로필 변경")
+@router.put(
+    "/profile/main/{profile_id}",
+    response_model=SuccessResponse,
+    summary="메인 프로필 변경",
+)
 async def set_main_profile(
     profile_id: int,
     current_user: dict = Depends(get_current_active_user),
@@ -227,7 +258,10 @@ async def set_main_profile(
         raise HTTPException(status_code=500, detail=msg)
     return SuccessResponse(message=msg)
 
-@router.delete("/delete", response_model=SuccessResponse, summary="현재 사용자 계정 삭제")
+
+@router.delete(
+    "/delete", response_model=SuccessResponse, summary="현재 사용자 계정 삭제"
+)
 async def delete_user_account(
     current_user: dict = Depends(get_current_active_user),
 ):

@@ -3,7 +3,7 @@ LLM 채팅 관련 API 엔드포인트 라우터입니다.
 - /api/v1/chat/stream: LLM 응답 스트리밍
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from fastapi.responses import StreamingResponse
 
 from ...backend.llm_manager import get_llm_manager
@@ -20,34 +20,22 @@ router = APIRouter(
 )
 
 
-# LLM 요청 시 LLMManager에 전달할 메시지 리스트로 변환하는 헬퍼 함수
-def _format_messages_for_manager(request: LLMRequest) -> List[Dict[str, Any]]:
-    """Pydantic 모델을 LLMManager가 예상하는 Dict 리스트로 변환"""
-    # LLMManager의 generate_response_stream은 Dict[str, Any] 형태의 메시지 리스트를 받습니다.
-    history: List[Dict[str, Any]] = [
-        msg.model_dump() for msg in request.history_messages
-    ]
-    return history
-
-
 @router.post("/stream", response_model=None)
-async def stream_llm_response(request: LLMRequest):
+async def stream_llm_response(
+    history_messages: List[Dict[str, Any]] = Body(...),
+    user_message: str = Body(...),
+    active_profile: Dict[str, Any] | None = Body(None),
+):
     """
     LLM 응답을 스트리밍으로 제공합니다.
     Streamlit 클라이언트의 get_llm_response_stream에서 이 엔드포인트를 호출합니다.
     """
 
-    # LLMManager에 전달할 메시지 이력 준비
-    history_messages = _format_messages_for_manager(request)
-
     # LLMManager의 스트리밍 제너레이터 호출
     generator = llm_manager.generate_response_stream(
         history_messages=history_messages,
-        user_message=request.user_message,
-        # Pydantic 모델을 Dict 형태로 변환하여 LLMManager에 전달
-        active_profile=(
-            request.active_profile.model_dump() if request.active_profile else None
-        ),
+        user_message=user_message,
+        active_profile=active_profile,
     )
 
     # FastAPI의 StreamingResponse를 사용하여 LLM의 제너레이터를 클라이언트로 전달
@@ -55,18 +43,18 @@ async def stream_llm_response(request: LLMRequest):
 
 
 @router.post("/generate", response_model=LLMResponse)
-async def generate_llm_response(request: LLMRequest):
+async def generate_llm_response(
+    history_messages: List[Dict[str, Any]] = Body(...),
+    user_message: str = Body(...),
+    active_profile: Dict[str, Any] | None = Body(None),
+):
     """
     LLM 응답을 비스트리밍으로 제공합니다. (선택적 구현)
     """
-    history_messages = _format_messages_for_manager(request)
-
     response_data = llm_manager.generate_response(
         history_messages=history_messages,
-        user_message=request.user_message,
-        active_profile=(
-            request.active_profile.model_dump() if request.active_profile else None
-        ),
+        user_message=user_message,
+        active_profile=active_profile,
     )
 
     return LLMResponse(**response_data)

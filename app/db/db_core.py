@@ -1,10 +1,14 @@
 """11.12 데이터베이스 핵심 연결 기능"""
 
 import psycopg2
+import psycopg2.extras
 import logging
 from .config import DB_CONFIG
 
 logger = logging.getLogger(__name__)
+
+# UUID 어댑터 등록 (모듈 로드 시 한 번만 실행)
+psycopg2.extras.register_uuid()
 
 
 def get_db_connection():
