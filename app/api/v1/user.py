@@ -33,7 +33,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def get_current_active_user(
-    token_data: TokenData = Depends(get_current_user),  # JWT에서 email 추출
+    token_data: TokenData = Depends(get_current_user),  # JWT에서 username 추출
 ) -> dict:
     """
     유효한 토큰으로부터 DB에서 현재 활성화된 사용자 객체(dict)를 조회합니다.
@@ -45,7 +45,7 @@ def get_current_active_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_uuid = db_ops.get_user_uuid_by_username(token_data.email)
+    user_uuid = db_ops.get_user_uuid_by_username(token_data.username)
     if user_uuid is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -74,19 +74,9 @@ def get_current_active_user(
 
 
 @router.post(
-    "/register",
-    response_model=SuccessResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="사용자 등록",
+    "/register", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED
 )
 async def register_user(user_data: UserCreate, db: Any = Depends(get_db)):
-    """
-    새로운 사용자를 등록합니다.
-    요청 본문에는 다음 필드가 포함되어야 합니다:
-    - **password**: 사용자 비밀번호
-    - **username**: 사용자 이름 (프로필 이름)
-    """
-    # 이미 존재하는 사용자 확인
     if db_ops.check_user_exists(user_data.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -95,21 +85,9 @@ async def register_user(user_data: UserCreate, db: Any = Depends(get_db)):
 
     hashed_password = pwd_context.hash(user_data.password)
 
-    # 회원가입 시 프로필 데이터도 함께 생성
-    full_user_data = {
-        "username": user_data.username,  # email 필드 → DB username 컬럼
-        "password_hash": hashed_password,  # 해시된 비밀번호
-        "name": user_data.username,  # username 필��� → 프로필 이름
-        "gender": "M",  # 기본값
-        "birthDate": None,
-        "location": None,
-        "healthInsurance": None,
-        "incomeLevel": 0.0,
-        "basicLivelihood": "NONE",
-        "disabilityLevel": "0",
-        "longTermCare": "NONE",
-        "pregnancyStatus": "없음",
-    }
+    # ✅ 전체 데이터 전달
+    full_user_data = user_data.model_dump()
+    full_user_data["password_hash"] = hashed_password
 
     ok, message = db_ops.create_user_and_profile(full_user_data)
 

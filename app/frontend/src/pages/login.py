@@ -41,23 +41,23 @@ PREGNANCY_OPTIONS = ["없음", "임신중", "출산후12개월이내"]
 
 # ==============================================================================
 
-# ✅ [추가] DB ENUM 값 매핑 딕셔너리
-HEALTH_INSURANCE_MAPPING = {
-    "직장": "EMPLOYED",
-    "지역": "LOCAL",
-    "피부양": "DEPENDENT",
-    "의료급여": "MEDICAL_AID_1",  # 🚨주의: 1종/2종이 확실히 구분되면 이 부분을 수정해야 합니다.
-    # 현재 UI 옵션에 맞춰 '의료급여' -> 'MEDICAL_AID_1'로 임시 매핑합니다.
-}
+# # ✅ [추가] DB ENUM 값 매핑 딕셔너리
+# HEALTH_INSURANCE_MAPPING = {
+#     "직장": "EMPLOYED",
+#     "지역": "LOCAL",
+#     "피부양": "DEPENDENT",
+#     "의료급여": "MEDICAL_AID_1",  # 🚨주의: 1종/2종이 확실히 구분되면 이 부분을 수정해야 합니다.
+#     # 현재 UI 옵션에 맞춰 '의료급여' -> 'MEDICAL_AID_1'로 임시 매핑합니다.
+# }
 
-# ✅ [추가] 기초생활보장 급여 매핑 딕셔너리
-BASIC_LIVELIHOOD_MAPPING = {
-    "없음": "NONE",
-    "생계": "LIVELIHOOD",
-    "의료": "MEDICAL",
-    "주거": "HOUSING",
-    "교육": "EDUCATION",
-}
+# # ✅ [추가] 기초생활보장 급여 매핑 딕셔너리
+# BASIC_LIVELIHOOD_MAPPING = {
+#     "없음": "NONE",
+#     "생계": "LIVELIHOOD",
+#     "의료": "MEDICAL",
+#     "주거": "HOUSING",
+#     "교육": "EDUCATION",
+# }
 
 # ==============================================================================
 # 1. 상태 초기화 함수 (app.py 최상단에서만 호출됨)
@@ -75,12 +75,15 @@ def initialize_auth_state():
             "password": "",
             "confirmPassword": "",
             "name": "",
-            "gender": GENDER_OPTIONS[0],
-            "birthDate": "",
-            "location": "",
-            "healthInsurance": HEALTH_INSURANCE_OPTIONS[0],
-            "incomeLevel": "",
-            "basicLivelihood": BASIC_LIVELIHOOD_OPTIONS[0],
+            "sex": GENDER_OPTIONS[0],
+            "birth_date": "",
+            "residency_sgg_code": "",
+            "insurance_type": HEALTH_INSURANCE_OPTIONS[0],
+            "median_income_ratio": "",
+            "basic_benefit_type": BASIC_LIVELIHOOD_OPTIONS[0],
+            "disability_grade": DISABILITY_OPTIONS[0],
+            "ltci_grade": LONGTERM_CARE_OPTIONS[0],
+            "pregnant_or_postpartum12m": PREGNANCY_OPTIONS[0],
         },
         "user_info": {},
         "is_id_available": None,
@@ -179,9 +182,6 @@ def handle_signup_submit(signup_data: Dict[str, Any]):
     return success, message
 
 
-# ... (앞부분 생략) ...
-
-
 def render_signup_tab():
     sdata = st.session_state["signup_form_data"]
     err = st.session_state["auth_error"].get("signup", "")
@@ -196,7 +196,7 @@ def render_signup_tab():
             user_id = st.text_input(
                 "아이디 *",
                 value=sdata.get("userId", ""),
-                key="signup_userid",
+                key="user_id",
                 placeholder="아이디를 입력하세요",
             )
         with col_check:
@@ -243,11 +243,10 @@ def render_signup_tab():
             key="signup_pw_confirm",
             placeholder="비밀번호를 다시 입력하세요",
         )
-        # ... (나머지 폼 필드는 동일) ...
         st.text_input(
             "이름 *",
-            value=sdata.get("name", ""),
-            key="signup_name",
+            value=sdata.get("name"),
+            key="name",
             placeholder="이름을 입력하세요",
         )
 
@@ -259,7 +258,7 @@ def render_signup_tab():
             value=default_date,
             min_value=min_date,
             max_value=max_date,
-            key="signup_birthdate",
+            key="birthdate",
             format="YYYY-MM-DD",
         )
 
@@ -268,35 +267,35 @@ def render_signup_tab():
             options=GENDER_OPTIONS,
             index=(
                 0
-                if not sdata.get("gender")
-                else GENDER_OPTIONS.index(sdata.get("gender", GENDER_OPTIONS[0]))
+                if not sdata.get("sex")
+                else GENDER_OPTIONS.index(sdata.get("sex", GENDER_OPTIONS[0]))
             ),
-            key="signup_gender",
+            key="sex",
             placeholder="선택하세요",
         )
         st.text_input(
             "거주지 (시군구) *",
-            value=sdata.get("location", ""),
-            key="signup_location",
+            value=sdata.get("residency_sgg_code", ""),
+            key="residency_sgg_code",
             placeholder="예: 서울시 강남구",
         )
         st.selectbox(
             "건강보험 자격 *",
             options=HEALTH_INSURANCE_OPTIONS,
-            key="signup_health",
+            key="insurance_type",
             placeholder="선택하세요",
         )
         st.text_input(
             "중위소득 대비 소득수준 (%) *",
-            value=sdata.get("incomeLevel", ""),
-            key="signup_income",
+            value=sdata.get("median_income_ratio", ""),
+            key="median_income_ratio",
             placeholder="예: 50, 100, 150",
             help="중위소득 대비 소득 수준을 백분율로 입력하세요",
         )
         st.selectbox(
             "기초생활보장 급여 *",
             options=BASIC_LIVELIHOOD_OPTIONS,
-            key="signup_basic",
+            key="basic_benefit_type",
             placeholder="선택하세요",
         )
 
@@ -305,7 +304,7 @@ def render_signup_tab():
         selected_disability = st.selectbox(
             "장애 등급 *",
             options=disability_options,
-            key="signup_disability",
+            key="disability_grade",
             placeholder="선택하세요",
         )
 
@@ -322,7 +321,7 @@ def render_signup_tab():
         selected_longterm = st.selectbox(
             "장기요양 등급 *",
             options=longterm_options,
-            key="signup_longterm",
+            key="ltci_grade",
             placeholder="선택하세요",
         )
 
@@ -330,7 +329,7 @@ def render_signup_tab():
         st.selectbox(
             "임신·출산 여부 *",
             options=pregnancy_options,
-            key="signup_pregnancy",
+            key="pregnant_or_postpartum12m",
             placeholder="선택하세요",
         )
 
@@ -351,7 +350,7 @@ def render_signup_tab():
         if submitted:
             # 폼 내부에서는 st.session_state에 값이 즉시 반영되므로,
             # 모든 필수 필드가 올바르게 채워졌는지 다시 한번 확인합니다.
-            user_id_value = st.session_state.get("signup_userid", "")
+            user_id_value = st.session_state.get("user_id", "")
 
             # 1차 유효성 검사 (필수 항목 및 ID 중복 확인)
             if not user_id_value or not st.session_state.signup_pw:
@@ -367,28 +366,36 @@ def render_signup_tab():
                 ] = "아이디 중복 확인을 완료하고 사용 가능한 아이디를 선택해야 합니다."
                 st.rerun()
                 return
+            # 생년월일 유효성 검사 추가
+            if not st.session_state.get("birthdate"):
+                st.session_state["auth_error"]["signup"] = "생년월일은 필수 정보입니다."
+                st.rerun()
+                return
 
-            # ... (기존의 데이터 수집 및 제출 로직은 동일) ...
-            # incomeLevel을 float로 변환
+            # 중위소득 비율 숫자 변환
             try:
-                income_value = float(st.session_state.signup_income) if st.session_state.signup_income else 0.0
+                income_value = (
+                    float(st.session_state.median_income_ratio)
+                    if st.session_state.median_income_ratio
+                    else 0.0
+                )
             except (ValueError, TypeError):
                 income_value = 0.0
-            
+
             signup_data = {
-                "username": user_id_value,  # 백엔드에서 email로 사용됨
+                "username": user_id_value,  # 폼에서 가져온 아이디 사용
                 "password": st.session_state.signup_pw,
                 "confirmPassword": st.session_state.signup_pw_confirm,
-                "name": st.session_state.get("signup_name", ""),
-                "gender": st.session_state.signup_gender,
-                "birthDate": st.session_state.signup_birthdate,
-                "location": st.session_state.signup_location,
-                "healthInsurance": st.session_state.signup_health,
-                "incomeLevel": income_value,  # float로 변환
-                "basicLivelihood": st.session_state.signup_basic,
-                "disabilityLevel": disability_map.get(selected_disability, "0"),
-                "longTermCare": longterm_map.get(selected_longterm, "NONE"),
-                "pregnancyStatus": st.session_state.signup_pregnancy,
+                "name": st.session_state.get("name"),
+                "birth_date": str(st.session_state.birthdate),
+                "sex": st.session_state.get("sex", ""),
+                "residency_sgg_code": st.session_state.residency_sgg_code,
+                "insurance_type": st.session_state.get("insurance_type", ""),
+                "median_income_ratio": income_value,  # float로 변환
+                "basic_benefit_type": st.session_state.basic_benefit_type,
+                "disability_grade": disability_map.get(selected_disability, "0"),
+                "ltci_grade": longterm_map.get(selected_longterm, "NONE"),
+                "pregnant_or_postpartum12m": st.session_state.get("pregnant_or_postpartum12m", ""),
             }
 
             # 비밀번호 일치 확인 (필수 항목이므로 여기서 체크)
@@ -396,6 +403,14 @@ def render_signup_tab():
                 st.session_state["auth_error"][
                     "signup"
                 ] = "비밀번호와 비밀번호 확인이 일치하지 않습니다."
+                st.rerun()
+                return
+
+            # 이름 필드 확인
+            if not st.session_state.get("name", "").strip():
+                st.session_state["auth_error"][
+                    "signup"
+                ] = "이름은 필수 정보입니다."
                 st.rerun()
                 return
 

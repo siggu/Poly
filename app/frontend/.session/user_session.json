@@ -1,24 +1,23 @@
 {
   "user_id": {
-    "email": "createprofile123",
-    "username": "박호송",
-    "id": 38,
-    "created_at": "2025-11-12T14:08:22.245776+09:00",
-    "updated_at": "2025-11-12T14:24:44.969781+09:00",
+    "username": "mynewone123",
+    "id": 52,
+    "created_at": "2025-11-14T14:41:29.544528+09:00",
+    "updated_at": "2025-11-14T14:41:29.544528+09:00",
     "profile": {
-      "name": "박호송",
-      "gender": "F",
-      "birthDate": "1996-11-22",
-      "location": "경기도 구리시",
-      "healthInsurance": "DEPENDENT",
-      "incomeLevel": 250.0,
-      "basicLivelihood": "MEDICAL",
-      "disabilityLevel": 1,
-      "longTermCare": "NONE",
-      "pregnancyStatus": "해당 없음",
+      "name": "박순자 ",
+      "sex": "M",
+      "birthDate": "1990-01-19",
+      "residency_sgg_code": "강원도 춘천시",
+      "insurance_type": "DEPENDENT",
+      "median_income_ratio": 40.0,
+      "basic_benefit_type": "HOUSING",
+      "disability_grade": 1,
+      "longTermCare": null,
+      "pregnancyStatus": null,
       "isActive": null
     }
   },
-  "user_info": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjcmVhdGVwcm9maWxlMTIzIiwiZXhwIjoxNzYzMDE4NzIwfQ.yDIbtXGXp_mzQ5bEyDsc4xuP6zCtZmVhqcyeDbFJzec",
-  "is_logged_in": false
+  "user_info": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJteW5ld29uZTEyMyIsImV4cCI6MTc2MzEwMDc1N30.hJ9UaGMxW0psEUuckZgYRThW9QzTud32tqEu7lljjRk",
+  "is_logged_in": true
 }

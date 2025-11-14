@@ -106,8 +106,17 @@ class BackendService:
         url = f"{FASTAPI_BASE_URL}/api/v1/user/register"
         payload = {
             "username": user_data.get("username"),
+            "name": user_data.get("name"),
             "password": user_data.get("password"),
-            
+            "birth_date": user_data.get("birth_date"),
+            "sex": user_data.get("sex"),
+            "residency_sgg_code": user_data.get("residency_sgg_code"),
+            "insurance_type": user_data.get("insurance_type"),
+            "median_income_ratio": user_data.get("median_income_ratio"),
+            "basic_benefit_type": user_data.get("basic_benefit_type"),
+            "disability_grade": user_data.get("disability_grade"),
+            "ltci_grade": user_data.get("ltci_grade"),
+            "pregnant_or_postpartum12m": user_data.get("pregnant_or_postpartum12m"),
         }
         try:
             response = requests.post(url, json=payload, timeout=10)
@@ -126,7 +135,10 @@ class BackendService:
         try:
             response = requests.post(url, json=payload, timeout=10)
             if response.status_code == 200:
-                return True, response.json()  # {"access_token": "...", "token_type": "bearer"}
+                return (
+                    True,
+                    response.json(),
+                )  # {"access_token": "...", "token_type": "bearer"}
             else:
                 error_detail = response.json().get("detail", "로그인 실패")
                 return False, error_detail
@@ -160,7 +172,9 @@ class BackendService:
         url = f"{FASTAPI_BASE_URL}/api/v1/user/profile"
         headers = {"Authorization": f"Bearer {token}"}
         try:
-            response = requests.post(url, json=profile_data, headers=headers, timeout=10)
+            response = requests.post(
+                url, json=profile_data, headers=headers, timeout=10
+            )
             response.raise_for_status()
             return True, response.json()
         except requests.exceptions.RequestException as e:
@@ -173,7 +187,9 @@ class BackendService:
         url = f"{FASTAPI_BASE_URL}/api/v1/user/profile/{profile_id}"
         headers = {"Authorization": f"Bearer {token}"}
         try:
-            response = requests.patch(url, json=update_data, headers=headers, timeout=10)
+            response = requests.patch(
+                url, json=update_data, headers=headers, timeout=10
+            )
             response.raise_for_status()
             return True, response.json().get("message", "성공적으로 수정되었습니다.")
         except requests.exceptions.RequestException as e:

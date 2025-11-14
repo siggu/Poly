@@ -55,6 +55,16 @@ class UserCreate(UserBase):
 
     username: str = Field(..., min_length=2, max_length=50)
     password: str = Field(..., min_length=8, max_length=72)
+    name: str = Field(..., min_length=2, max_length=50)  # 이름은 필수로 받도록 변경
+    birth_date: Optional[str] = None
+    sex: Optional[str] = None
+    residency_sgg_code: Optional[str] = None
+    insurance_type: Optional[str] = None
+    median_income_ratio: Optional[float] = None
+    basic_benefit_type: Optional[str] = None
+    disability_grade: Optional[str] = None
+    ltci_grade: Optional[str] = None
+    pregnant_or_postpartum12m: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -68,13 +78,13 @@ class UserProfile(BaseModel):
     """사용자 프로필 정보 구조"""
 
     name: Optional[str] = None
-    gender: Optional[str] = None
+    sex: Optional[str] = None
     birthDate: Optional[str] = None
-    location: Optional[str] = None
-    healthInsurance: Optional[str] = None
-    incomeLevel: Optional[float] = None
-    basicLivelihood: Optional[str] = None
-    disabilityLevel: Optional[int] = None
+    residency_sgg_code: Optional[str] = None
+    insurance_type: Optional[str] = None
+    median_income_ratio: Optional[float] = None
+    basic_benefit_type: Optional[str] = None
+    disability_grade: Optional[int] = None
     longTermCare: Optional[str] = None
     pregnancyStatus: Optional[str] = None
     isActive: Optional[bool] = None

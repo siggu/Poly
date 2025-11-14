@@ -22,11 +22,33 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 환경 변수에서 DB 연결 정보 로드
-DB_NAME = os.getenv("DB_NAME", "postgres")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+
+# 매핑 딕셔너리
+GENDER_MAPPING = {
+    "남성": "M",
+    "여성": "F",
+}
+
+HEALTH_INSURANCE_MAPPING = {
+    "직장": "EMPLOYED",
+    "지역": "LOCAL",
+    "피부양": "DEPENDENT",
+    "의료급여": "MEDICAL_AID_1",
+}
+
+BASIC_LIVELIHOOD_MAPPING = {
+    "없음": "NONE",
+    "생계": "LIVELIHOOD",
+    "의료": "MEDICAL",
+    "주거": "HOUSING",
+    "교육": "EDUCATION",
+}
+
 
 # ==============================================================================
 # 1. DB 연결 및 컨텍스트 관리
@@ -204,7 +226,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
     if not (username and password_hash):
         return False, "필수 사용자 정보가 누락되었습니다."
 
-    new_uuid_str = str(uuid.uuid4())  # UUID 객체를 문자열로 변환
+    new_uuid_str = str(uuid.uuid4())
 
     with get_db_connection() as conn:
         if conn is None:
@@ -212,48 +234,108 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
 
         try:
             with conn.cursor() as cur:
-                # 1. 사용자 생성
+                # 1. 사용자 생성 (id_uuid 포함)
                 cur.execute(
-                    "INSERT INTO users (id, username, password_hash) VALUES (%s, %s, %s)",
-                    (new_uuid_str, username, password_hash),
+                    "INSERT INTO users (id, username, password_hash, id_uuid) VALUES (%s, %s, %s, %s)",
+                    (new_uuid_str, username, password_hash, new_uuid_str),
                 )
 
-                # 2. 기본 프로필 생성
+                # 2. 기본 프로필 생성 - 매핑 적용
+                # profile_name = user_data.get("username")
                 profile_name = user_data.get("name", "본인")
+                birth_date = user_data.get("birth_date")
+
+                # 성별 매핑
+                sex = GENDER_MAPPING.get(user_data.get("gender"), "M")
+
+                residency_sgg_code = user_data.get("residency_sgg_code")
+
+                # 건강보험 매핑
+                insurance_type = HEALTH_INSURANCE_MAPPING.get(
+                    user_data.get("insurance_type"), "EMPLOYED"
+                )
+
+                median_income_ratio = float(
+                    user_data.get("median_income_ratio", 0) or 0
+                )
+
+                # 기초생활보장 매핑
+                basic_benefit_type = BASIC_LIVELIHOOD_MAPPING.get(
+                    user_data.get("basic_benefit_type", "없음"), "NONE"
+                )
+
+                # 장애등급 (숫자)
+                disability_grade = (
+                    int(user_data.get("disability_grade", 0) or 0)
+                    if user_data.get("disability_grade")
+                    else None
+                )
+
+                # 장기요양 등급 (이미 영문 코드)
+                ltci_grade = user_data.get("ltci_grade", "NONE")
+
+                # 임신 여부 (boolean)
+                pregnant_or_postpartum12m = (
+                    user_data.get("pregnant_or_postpartum12m") == "임신중"
+                    or user_data.get("pregnant_or_postpartum12m") == "출산후12개월이내"
+                )
 
                 cur.execute(
                     """
                     INSERT INTO profiles (
-                        user_id, birth_date, sex, residency_sgg_code, 
+                        user_id, name, birth_date, sex, residency_sgg_code, 
                         insurance_type, median_income_ratio, basic_benefit_type, 
-                        disability_grade, ltci_grade, pregnant_or_postpartum12m,
-                        updated_at, name
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, ) 
+                        disability_grade, ltci_grade, pregnant_or_postpartum12m
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
                     RETURNING id;
                 """,
                     (
                         new_uuid_str,
-                        user_data.get("birthDate"),
-                        user_data.get("gender"),
-                        user_data.get("location"),
-                        user_data.get("healthInsurance"),
-                        float(user_data.get("incomeLevel") or 0),
-                        user_data.get("basicLivelihood"),
-                        (
-                            int(user_data.get("disabilityLevel") or 0)
-                            if user_data.get("disabilityLevel")
-                            else None
-                        ),
-                        user_data.get("longTermCare"),
-                        user_data.get("pregnancyStatus")
-                        == "임신 또는 출산 후 12개월 이내",
-                        user_data.get("name"),
-                        # profile_name
+                        profile_name,
+                        birth_date,
+                        sex,
+                        residency_sgg_code,
+                        insurance_type,
+                        median_income_ratio,
+                        basic_benefit_type,
+                        disability_grade,
+                        ltci_grade,
+                        pregnant_or_postpartum12m,
                     ),
                 )
 
-                # 3. 생성된 프로필 ID를 main_profile_id로 설정
+                # 3. 생성된 프로필 ID 가져오기
                 main_profile_id = cur.fetchone()[0]
+
+                # 4. collections 테이블에 초기 데이터 추가 (임신 여부만)
+                if pregnant_or_postpartum12m:
+                    pregnancy_detail = user_data.get(
+                        "pregnant_or_postpartum12m", "임신중"
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO collections (
+                            profile_id, subject, predicate, object,
+                            code_system, code, onset_date, end_date,
+                            negation, confidence, source_id, created_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        """,
+                        (
+                            main_profile_id,
+                            "user",
+                            "PREGNANT_OR_POSTPARTUM12M",
+                            pregnancy_detail,
+                            "NONE",
+                            None,
+                            None,
+                            None,
+                            False,
+                            1.0,
+                            None,
+                        ),
+                    )
+
+                # 5. users 테이블 main_profile_id 업데이트
                 cur.execute(
                     "UPDATE users SET main_profile_id = %s WHERE id = %s",
                     (main_profile_id, new_uuid_str),
@@ -322,23 +404,23 @@ def _map_profile_row(row: Dict) -> Dict[str, Any]:
     return {
         "id": row.get("id"),
         "name": row.get("name"),
-        "birthDate": str(row["birth_date"]) if row.get("birth_date") else None,
-        "gender": row.get("sex"),
-        "location": row.get("residency_sgg_code"),
-        "incomeLevel": (
+        "birth_date": str(row["birth_date"]) if row.get("birth_date") else None,
+        "sex": GENDER_MAPPING.get(row.get("sex"), "M"),
+        "residency_sgg_code": row.get("residency_sgg_code"),
+        "median_income_ratio": (
             float(row.get("median_income_ratio"))
             if row.get("median_income_ratio")
             else None
         ),
-        "healthInsurance": row.get("insurance_type"),
-        "basicLivelihood": row.get("basic_benefit_type"),
-        "disabilityLevel": (
+        "insurance_type": HEALTH_INSURANCE_MAPPING.get(row.get("insurance_type"), "EMPLOYED"),
+        "basic_benefit_type": BASIC_LIVELIHOOD_MAPPING.get(row.get("basic_benefit_type"), "NONE"),
+        "disability_grade": (
             int(row.get("disability_grade"))
             if row.get("disability_grade") is not None
             else None
         ),
-        "longTermCare": row.get("ltci_grade"),
-        "pregnancyStatus": (
+        "ltci_grade": row.get("ltci_grade"),
+        "pregnant_or_postpartum12m": (
             "임신 또는 출산 후 12개월 이내"
             if row.get("pregnant_or_postpartum12m")
             else "해당 없음"
@@ -386,22 +468,22 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str,
                             if user_info.get("birth_date")
                             else None
                         ),
-                        "gender": user_info.get("sex"),
-                        "location": user_info.get("residency_sgg_code"),
-                        "incomeLevel": (
+                        "sex": user_info.get("sex"),
+                        "residency_sgg_code": user_info.get("residency_sgg_code"),
+                        "median_income_ratio": (
                             float(user_info.get("median_income_ratio"))
                             if user_info.get("median_income_ratio")
                             else None
                         ),
-                        "healthInsurance": user_info.get("insurance_type"),
-                        "basicLivelihood": user_info.get("basic_benefit_type"),
-                        "disabilityLevel": (
+                        "insurance_type": user_info.get("insurance_type"),
+                        "basic_benefit_type": user_info.get("basic_benefit_type"),
+                        "disability_grade": (
                             int(user_info.get("disability_grade"))
                             if user_info.get("disability_grade") is not None
                             else None
                         ),
-                        "longTermCare": user_info.get("ltci_grade"),
-                        "pregnancyStatus": (
+                        "ltci_grade": user_info.get("ltci_grade"),
+                        "pregnant_or_postpartum12m": (
                             "임신 또는 출산 후 12개월 이내"
                             if user_info.get("pregnant_or_postpartum12m")
                             else "해당 없음"
@@ -463,22 +545,22 @@ def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int
                         user_uuid,
                         profile_data.get("name", "새 프로필"),
                         profile_data.get("birthDate"),
-                        profile_data.get("gender"),
-                        profile_data.get("location"),
-                        profile_data.get("healthInsurance"),
+                        profile_data.get("sex"),
+                        profile_data.get("residency_sgg_code"),
+                        profile_data.get("insurance_type"),
                         (
-                            float(profile_data.get("incomeLevel") or 0)
-                            if profile_data.get("incomeLevel")
+                            float(profile_data.get("median_income_ratio") or 0)
+                            if profile_data.get("median_income_ratio")
                             else None
                         ),
-                        profile_data.get("basicLivelihood"),
+                        profile_data.get("basic_benefit_type"),
                         (
-                            int(profile_data.get("disabilityLevel") or 0)
-                            if profile_data.get("disabilityLevel")
+                            int(profile_data.get("disability_grade") or 0)
+                            if profile_data.get("disability_grade")
                             else None
                         ),
-                        profile_data.get("longTermCare"),
-                        profile_data.get("pregnancyStatus")
+                        profile_data.get("ltci_grade"),
+                        profile_data.get("pregnant_or_postpartum12m")
                         == "임신 또는 출산 후 12개월 이내",
                     ),
                 )
@@ -505,14 +587,14 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             column_map = {
                 "name": "name",
                 "birthDate": "birth_date",
-                "gender": "sex",
-                "location": "residency_sgg_code",
-                "incomeLevel": "median_income_ratio",
-                "healthInsurance": "insurance_type",
-                "basicLivelihood": "basic_benefit_type",
-                "disabilityLevel": "disability_grade",
-                "longTermCare": "ltci_grade",
-                "pregnancyStatus": "pregnant_or_postpartum12m",
+                "sex": "sex",
+                "residency_sgg_code": "residency_sgg_code",
+                "median_income_ratio": "median_income_ratio",
+                "insurance_type": "insurance_type",
+                "basic_benefit_type": "basic_benefit_type",
+                "disability_grade": "disability_grade",
+                "ltci_grade": "ltci_grade",
+                "pregnant_or_postpartum12m": "pregnant_or_postpartum12m",
             }
 
             for frontend_key, db_column in column_map.items():
@@ -520,11 +602,11 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
                     value = profile_data[frontend_key]
 
                     # 타입 변환
-                    if frontend_key == "incomeLevel":
+                    if frontend_key == "median_income_ratio":
                         value = float(value) if value is not None else None
-                    elif frontend_key == "disabilityLevel":
+                    elif frontend_key == "disability_grade":
                         value = int(value) if value is not None else None
-                    elif frontend_key == "pregnancyStatus":
+                    elif frontend_key == "pregnant_or_postpartum12m":
                         value = value == "임신 또는 출산 후 12개월 이내"
 
                     set_clauses.append(f"{db_column} = %s")
@@ -601,6 +683,5 @@ def update_user_main_profile_id(
 # ==============================================================================
 
 if __name__ == "__main__":
-
     initialize_db()
     print("데이터베이스 초기화 완료.")
