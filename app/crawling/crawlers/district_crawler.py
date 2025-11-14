@@ -12,23 +12,21 @@
 
 import json
 import os
-from datetime import datetime
-from typing import List, Dict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
-
-# 공통 모듈 import
 import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-import config
-import utils
-from utils import normalize_url
-from base.parallel_crawler import BaseParallelCrawler
-from components.link_collector import LinkCollector
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
 
-class DistrictCrawler(BaseParallelCrawler):
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from app.crawling import config, utils
+from app.crawling.utils import normalize_url
+from app.crawling.base.workflow_crawler import WorkflowCrawler
+from app.crawling.components.link_collector import LinkCollector
+
+
+class DistrictCrawler(WorkflowCrawler):
     """보건소 사이트 크롤링 및 구조화 워크플로우"""
 
     def __init__(
@@ -77,56 +75,26 @@ class DistrictCrawler(BaseParallelCrawler):
         print("보건소 사이트 크롤링 워크플로우 시작")
         print("=" * 80)
 
-        workflow_start_time = time.time()
+        crawl_rules = crawl_rules or config.CRAWL_RULES
 
-        if crawl_rules is None:
-            crawl_rules = config.CRAWL_RULES
-
-        # 1단계: 링크 수집 및 필터링
-        initial_links = self._collect_and_filter_links(
-            start_url, crawl_rules, enable_keyword_filter
+        summary = super().run(
+            start_url=start_url,
+            save_initial=save_links,
+            save_json=save_json,
+            return_data=return_data,
+            enable_keyword_filter=enable_keyword_filter,
+            crawl_rules=crawl_rules,
         )
-
-        if not initial_links:
-            print("처리할 링크가 없습니다. 워크플로우를 종료합니다.")
-            return {}
-
-        # 2단계: 초기 링크 저장
-        if save_links:
-            self._save_initial_links(initial_links)
-
-        # 3단계: 페이지 처리 및 구조화
-        structured_data_list, failed_urls, processed_count = self._process_all_pages(
-            initial_links, enable_keyword_filter
-        )
-
-        # 4단계: 결과 저장
-        summary = self._save_results(
-            start_url,
-            initial_links,
-            structured_data_list,
-            failed_urls,
-            processed_count,
-            save_json,
-            return_data,
-        )
-
-        workflow_duration = time.time() - workflow_start_time
-        utils.get_timing_stats().add_timing("6_워크플로우_전체", workflow_duration)
-
-        # 최종 요약 출력
-        self._print_summary(
-            initial_links, processed_count, structured_data_list, failed_urls
-        )
-
-        # 속도 통계 출력
-        print("\n")
-        utils.get_timing_stats().print_summary()
 
         return summary
 
-    def _collect_and_filter_links(
-        self, start_url: str, crawl_rules: List[Dict], enable_keyword_filter: bool
+    def collect_initial_items(
+        self,
+        *,
+        start_url: str,
+        crawl_rules: List[Dict],
+        enable_keyword_filter: bool,
+        **__: Any,
     ) -> List[Dict]:
         """
         링크 수집 및 필터링
@@ -137,7 +105,8 @@ class DistrictCrawler(BaseParallelCrawler):
         print("\n[1단계] 초기 링크 수집 중...")
         print("-" * 80)
 
-        initial_links = self.link_collector.collect_links(start_url, crawl_rules)
+        rules_to_use = crawl_rules or config.CRAWL_RULES
+        initial_links = self.link_collector.collect_links(start_url, rules_to_use)
         print(f"\n[SUCCESS] 총 {len(initial_links)}개의 초기 링크 수집 완료")
 
         if not initial_links:
@@ -160,19 +129,29 @@ class DistrictCrawler(BaseParallelCrawler):
 
         return initial_links
 
-    def _save_initial_links(self, initial_links: List[Dict]):
+    def save_initial_items(
+        self,
+        *,
+        start_url: str,
+        items: Sequence[Dict],
+        **kwargs: Any,
+    ) -> None:
         """초기 링크 JSON 저장"""
         links_file = os.path.join(self.output_dir, "collected_initial_links.json")
         try:
             with open(links_file, "w", encoding="utf-8") as f:
-                json.dump(initial_links, f, ensure_ascii=False, indent=2)
+                json.dump(items, f, ensure_ascii=False, indent=2)
             print(f"[FILE] 초기 링크 목록 저장: {links_file}")
         except IOError as e:
             print(f"경고: 초기 링크 파일 저장 실패 - {e}")
 
-    def _process_all_pages(
-        self, initial_links: List[Dict], enable_keyword_filter: bool
-    ) -> tuple:
+    def process_items_for_workflow(
+        self,
+        *,
+        initial_items: Sequence[Dict],
+        enable_keyword_filter: bool,
+        **kwargs: Any,
+    ) -> Tuple[List[Dict], List[Dict], int]:
         """
         모든 페이지 병렬 처리 (탭 포함)
 
@@ -185,12 +164,12 @@ class DistrictCrawler(BaseParallelCrawler):
 
         structured_data_list = []
         failed_urls = []
-        links_to_process = list(initial_links)
+        links_to_process = list(initial_items)
         # URL을 정규화하여 저장 (중복 방지)
 
-        processed_or_queued_urls = [
-            normalize_url(link["url"]) for link in initial_links
-        ]
+        processed_or_queued_urls = {
+            normalize_url(link["url"]) for link in initial_items
+        }
         processed_count = 0
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -229,9 +208,7 @@ class DistrictCrawler(BaseParallelCrawler):
                                 if final_url:
                                     normalized_final = normalize_url(final_url)
                                     if normalized_final not in processed_or_queued_urls:
-                                        processed_or_queued_urls.append(
-                                            normalized_final
-                                        )
+                                        processed_or_queued_urls.add(normalized_final)
 
                             # 탭 링크 처리
                             if tab_links:
@@ -359,7 +336,9 @@ class DistrictCrawler(BaseParallelCrawler):
                 if not passed:
                     log_buffer.append(f"  [SKIP] 탭 제목 필터링: {reason}")
                     # 실패로 처리하지 않고 건너뜀
-                    raise ValueError(f"탭 제목이 블랙리스트에 해당: {title_for_llm} - {reason}")
+                    raise ValueError(
+                        f"탭 제목이 블랙리스트에 해당: {title_for_llm} - {reason}"
+                    )
 
             # 4. LLM 구조화
             log_buffer.append("    -> 내용 구조화 진행...")
@@ -397,7 +376,7 @@ class DistrictCrawler(BaseParallelCrawler):
         self,
         tab_links: List[Dict],
         links_to_process: List[Dict],
-        processed_or_queued_urls: List[str],
+        processed_or_queued_urls: Set[str],
         enable_keyword_filter: bool,
     ) -> int:
         """
@@ -439,7 +418,7 @@ class DistrictCrawler(BaseParallelCrawler):
 
             # 큐에 추가 (정규화된 URL을 processed_or_queued_urls에 저장)
             links_to_process.append(tab_link_info)
-            processed_or_queued_urls.append(normalized_tab_url)
+            processed_or_queued_urls.add(normalized_tab_url)
             newly_added_count += 1
             print(f"      + 탭 링크 추가: {tab_name} ({tab_url})")
 
@@ -450,15 +429,17 @@ class DistrictCrawler(BaseParallelCrawler):
 
         return newly_added_count
 
-    def _save_results(
+    def persist_results(
         self,
+        *,
         start_url: str,
-        initial_links: List[Dict],
-        structured_data_list: List[Dict],
-        failed_urls: List[Dict],
+        initial_items: Sequence[Dict],
+        structured_items: Sequence[Dict],
+        failed_items: Sequence[Dict],
         processed_count: int,
         save_json: bool = True,
         return_data: bool = False,
+        **kwargs: Any,
     ) -> Dict:
         """
         결과 저장
@@ -480,20 +461,20 @@ class DistrictCrawler(BaseParallelCrawler):
             )
             try:
                 with open(output_file, "w", encoding="utf-8") as f:
-                    json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
+                    json.dump(structured_items, f, ensure_ascii=False, indent=2)
                 print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
             except IOError as e:
                 print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
 
         # 실패한 URL 저장
         failed_file = None
-        if failed_urls:
+        if failed_items:
             failed_file = os.path.join(
                 self.output_dir, f"failed_urls_{region_name}.json"
             )
             try:
                 with open(failed_file, "w", encoding="utf-8") as f:
-                    json.dump(failed_urls, f, ensure_ascii=False, indent=2)
+                    json.dump(failed_items, f, ensure_ascii=False, indent=2)
                 print(f"[WARNING] 실패한 URL 저장: {failed_file}")
             except IOError as e:
                 print(f"경고: 실패한 URL 파일 저장 실패 - {e}")
@@ -503,15 +484,15 @@ class DistrictCrawler(BaseParallelCrawler):
             "timestamp": timestamp,
             "region": region_name,
             "start_url": start_url,
-            "initial_links_collected": len(initial_links),
+            "initial_links_collected": len(initial_items),
             "total_urls_processed_or_failed": processed_count,
-            "successful_structured": len(structured_data_list),
-            "failed_processing": len(failed_urls),
+            "successful_structured": len(structured_items),
+            "failed_processing": len(failed_items),
             "output_file": output_file,
             "failed_urls_file": failed_file,
         }
         if return_data:
-            summary["data"] = structured_data_list  # 메모리 데이터 동봉
+            summary["data"] = structured_items  # 메모리 데이터 동봉
         summary_file = os.path.join(self.output_dir, f"summary_{timestamp}.json")
         try:
             with open(summary_file, "w", encoding="utf-8") as f:
@@ -522,23 +503,37 @@ class DistrictCrawler(BaseParallelCrawler):
 
         return summary
 
-    def _print_summary(
+    def print_workflow_summary(
         self,
-        initial_links: List[Dict],
+        *,
+        initial_items: Sequence[Dict],
         processed_count: int,
-        structured_data_list: List[Dict],
-        failed_urls: List[Dict],
-    ):
+        structured_items: Sequence[Dict],
+        failed_items: Sequence[Dict],
+        **kwargs: Any,
+    ) -> None:
         """최종 요약 출력"""
         print("\n" + "=" * 80)
         print("워크플로우 완료")
         print("=" * 80)
-        print(f"[STAT] 초기 수집 링크 수: {len(initial_links)}")
+        print(f"[STAT] 초기 수집 링크 수: {len(initial_items)}")
         print(f"[STAT] 총 처리 시도 URL 수: {processed_count}")
-        print(f"[SUCCESS] 성공 (구조화): {len(structured_data_list)}개")
-        print(f"[ERROR] 실패: {len(failed_urls)}개")
+        print(f"[SUCCESS] 성공 (구조화): {len(structured_items)}개")
+        print(f"[ERROR] 실패: {len(failed_items)}개")
         print(f"[DIR] 결과 저장 위치: {self.output_dir}")
         print("=" * 80)
+
+    def on_workflow_complete(
+        self,
+        *,
+        initial_items: Sequence[Dict],
+        structured_items: Sequence[Dict],
+        failed_items: Sequence[Dict],
+        summary: Dict,
+        **kwargs: Any,
+    ) -> None:
+        print("\n")
+        utils.get_timing_stats().print_summary()
 
 
 def main():
