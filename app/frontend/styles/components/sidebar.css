@@ -1,0 +1,36 @@
+/* 사이드바 스타일 */
+.sidebar-logo {
+    margin-bottom: 20px;
+}
+
+.sidebar-logo h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+}
+
+.chatbot-info-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 12px;
+    background-color: #f9f9f9;
+    margin-bottom: 20px;
+}
+
+.chatbot-info-card h3 {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.chatbot-info-card p {
+    font-size: 11px;
+    color: #666;
+    margin: 0;
+}
+
+
+
+
+

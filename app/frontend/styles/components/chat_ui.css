@@ -1,0 +1,48 @@
+/* 챗봇 UI 스타일 */
+.chat-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.chat-title-section {
+    text-align: center;
+    margin: 40px 0;
+}
+
+.chat-title-section h1 {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.chat-title-section p {
+    font-size: 16px;
+    color: #666;
+}
+
+.suggested-questions-header {
+    margin: 30px 0 20px 0;
+}
+
+.suggested-questions-header p {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.disclaimer {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.disclaimer p {
+    font-size: 11px;
+    color: #999;
+}
+
+
+
+
+

@@ -1,0 +1,56 @@
+/* 정책 카드 스타일 */
+.policy-card {
+    border: 2px solid;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.policy-card-eligible {
+    border-color: #4CAF50;
+}
+
+.policy-card-ineligible {
+    border-color: #FF5722;
+}
+
+.policy-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.policy-card-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0;
+}
+
+.policy-badge {
+    color: white;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.policy-badge-eligible {
+    background-color: #4CAF50;
+}
+
+.policy-badge-ineligible {
+    background-color: #FF5722;
+}
+
+.policy-card-description {
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 10px;
+}
+
+
+
+
+

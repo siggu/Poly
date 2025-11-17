@@ -1,0 +1,141 @@
+/* 의료 혜택 정보 제공 에이전트 챗봇 커스텀 스타일 */
+
+/* 전체 앱 배경 */
+.stApp {
+    background-color: #F5F5F0;
+}
+
+/* 사이드바 스타일 */
+[data-testid="stSidebar"] {
+    background-color: #F8F8F8;
+    border-right: 1px solid #E0E0E0;
+}
+
+[data-testid="stSidebarContent"] {
+    padding: 20px;
+}
+
+/* 메인 컨텐츠 영역 */
+.main {
+    background-color: #FFFFFF;
+    padding: 20px;
+}
+
+/* 버튼 스타일 */
+.stButton > button {
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 입력 필드 스타일 */
+.stTextInput > div > div > input {
+    border-radius: 8px;
+}
+
+.stSelectbox > div > div {
+    border-radius: 8px;
+}
+
+/* 채팅 버블 스타일 */
+.chat-bubble {
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin: 8px 0;
+}
+
+.chat-bubble-user {
+    background-color: #FF6B6B;
+    color: white;
+    margin-left: auto;
+}
+
+.chat-bubble-assistant {
+    background-color: white;
+    border: 1px solid #E0E0E0;
+}
+
+/* 카드 스타일 */
+.policy-card {
+    border: 1px solid #E0E0E0;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 12px 0;
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* 모달 오버레이 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 탭 스타일 */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px 8px 0 0;
+}
+
+/* 체크박스 스타일 */
+.stCheckbox {
+    margin: 8px 0;
+}
+
+/* 폼 스타일 */
+.stForm {
+    border: 1px solid #E0E0E0;
+    border-radius: 12px;
+    padding: 20px;
+    background-color: white;
+}
+
+/* 경고 메시지 */
+.stAlert {
+    border-radius: 8px;
+    padding: 12px;
+}
+
+/* 헤더 스타일 */
+h1, h2, h3 {
+    color: #333;
+}
+
+/* 스크롤바 스타일 (선택 사항) */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #F5F5F5;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #CCCCCC;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #999999;
+}
+
+
+
+
+
