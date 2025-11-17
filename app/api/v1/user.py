@@ -1,3 +1,4 @@
+"""User & Auth 관련 API 엔드포인트를 정의합니다. 11.14수정"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Any
 from passlib.context import CryptContext

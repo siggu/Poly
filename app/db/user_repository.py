@@ -1,4 +1,4 @@
-"""데이터베이스 CRUD 로직 (Repository)"""
+"""User Repository 모듈: 사용자 및 프로필 관련 DB 작업을 처리합니다. 11.14수정"""
 
 import logging
 import uuid

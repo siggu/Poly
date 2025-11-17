@@ -1,4 +1,4 @@
-"""로그인/회원가입 UI 및 상태 11.13 수정"""
+"""로그인/회원가입 UI 및 상태 11.14 테이블 컬럼명에 맞게 수정"""
 
 import datetime
 from typing import Dict, Any, Tuple

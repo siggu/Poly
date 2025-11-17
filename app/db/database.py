@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Streamlit 앱에서 직접 사용하는 데이터베이스 접근 계층 (PostgreSQL)
-모든 CRUD 및 사용자 인증 관련 DB 로직을 포함합니다.
-실제 DB 스키마에 맞게 수정됨.
-"""
+"""Database interaction 모듈: 사용자 인증, 계정 관리, 프로필 관리 기능 포함. 11.14수정"""
 import psycopg2
 import psycopg2.extras
 import os
