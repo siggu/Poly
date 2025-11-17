@@ -1,7 +1,8 @@
 """의료 혜택 정보 제공 에이전트 챗봇 메인 애플리케이션 파일 11.13 수정"""
 
 import streamlit as st
-import requests
+
+# import requests
 from src.state_manger import initialize_session_state
 from src.pages.login import (
     initialize_auth_state,
@@ -16,11 +17,11 @@ from src.backend_service import backend_service
 from src.pages.chat import render_chatbot_main
 from src.pages.my_page import render_my_page_modal
 from src.pages.settings import render_settings_modal
-
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
-
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # 0. 전역 설정 및 CSS 주입
@@ -46,36 +47,24 @@ initialize_auth_state()
 
 if "profiles" not in st.session_state:
     st.session_state.profiles = []
-# ================세션 초기화 기본 문법=============================
-# # Initialization
-# if 'key' not in st.session_state:
-#     st.session_state['key'] = 'value'
-
-# # Session State also supports attribute based syntax
-# if 'key' not in st.session_state:
-#     st.session_state.key = 'value'
-# =============================================================
-
 
 # 마이페이지 / 설정 모달 관련 상태
-if "isAddingProfile" not in st.session_state:  # 프로필 추가 열렸는지 확인
+if "isAddingProfile" not in st.session_state:
     st.session_state.isAddingProfile = False
-if "editingProfileId" not in st.session_state:  # 프로필 수정 상태 초기화
+if "editingProfileId" not in st.session_state:
     st.session_state.editingProfileId = None
-if "newProfile" not in st.session_state:  # 프로필 추가 세션
+if "newProfile" not in st.session_state:
     st.session_state.newProfile = {}
 if "editingData" not in st.session_state:
     st.session_state.editingData = {}
 
 # 사이드바/챗봇 관련 상태
-# 대화 내용 검색 필드의 초기값 설정
 if "search_query" not in st.session_state:
     st.session_state.search_query = ""
 
-
-# 사이드바 검색 입력 필드의 초기값 설정.
 if "sidebar_search_input" not in st.session_state:
     st.session_state.sidebar_search_input = ""
+
 
 # ==============================================================================
 # 2. 유틸리티 및 핸들러 함수
@@ -87,7 +76,6 @@ def handle_logout():
     st.session_state.settings_modal_open = False
 
 
-# --- Sidebar 핸들러 ---
 def handle_search_update():
     st.session_state.search_query = st.session_state.sidebar_search_input
 
@@ -101,7 +89,6 @@ def handle_settings_click():
 # ==============================================================================
 
 
-# --- A. ErrorMessage 컴포넌트 ---
 def render_error_message(error_type: str, message: str, on_action_click=None):
     def get_error_config(type_key):
         if type_key == "no-policy":
@@ -135,8 +122,6 @@ def render_error_message(error_type: str, message: str, on_action_click=None):
             key=f"error_action_{error_type}",
             on_click=(
                 on_action_click
-                # if on_action_click
-                # else lambda: st.toast(f"액션 실행: {config['action']}")
                 if on_action_click
                 else lambda: st.info(f"액션 실행: {config['action']}")
             ),
@@ -147,7 +132,6 @@ def render_error_message(error_type: str, message: str, on_action_click=None):
 # 4. 메인 앱 실행 로직 (Application Flow)
 # ==============================================================================
 
-# 추천 질문 목록
 SUGGESTED_QUESTIONS = [
     "청년 주거 지원 정책이 궁금해요",
     "취업 지원 프로그램 알려주세요",
@@ -156,7 +140,59 @@ SUGGESTED_QUESTIONS = [
 ]
 
 
+# 11.17 수정: 모든 프로필 로드 함수 수정
+def load_user_profiles_from_backend(token: str) -> bool:
+    """백엔드에서 사용자 정보와 모든 프로필을 로드합니다."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # 1. 사용자 기본 정보 조회
+        ok, user_info = backend_service.get_user_profile(token)
+        if not ok:
+            logger.error(f"❌ 사용자 정보 조회 실패: {user_info}")
+            return False
+
+        st.session_state["user_info"] = user_info
+        logger.info(f"✅ 사용자 정보 로드 완료: {user_info.get('userId')}")
+
+        # 2. 모든 프로필 목록 조회
+        ok_profiles, all_profiles = backend_service.get_all_profiles(token)
+
+        if ok_profiles and all_profiles:
+            # main_profile_id로 활성 프로필 표시
+            main_profile_id = user_info.get("main_profile_id")
+            logger.info(f"✅ main_profile_id: {main_profile_id}")
+
+            for profile in all_profiles:
+                if profile:  # None 체크
+                    profile_id = profile.get("id")
+                    profile["isActive"] = profile_id == main_profile_id
+
+            st.session_state["profiles"] = all_profiles
+            logger.info(f"✅ 프로필 {len(all_profiles)}개 로드 완료")
+            return True
+        else:
+            # ✅ 수정: 프로필이 없어도 True 반환 (토큰은 유효함)
+            logger.warning("⚠️ 프로필이 비어있습니다. 빈 리스트로 초기화합니다.")
+            st.session_state["profiles"] = []
+            return True  # ← False에서 True로 변경!
+
+    except Exception as e:
+        logger.error(f"❌ 프로필 로드 중 오류 발생: {e}")
+        st.error(f"프로필 로드 중 오류 발생: {e}")
+        st.session_state["profiles"] = []
+        return True  # ✅ 예외 발생해도 True 반환 (토큰은 유효할 수 있음)
+
+
+# 11.17 수정: 메인 앱 함수
 def main_app():
+    """메인 애플리케이션 함수"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     # 사이드바 네비게이션 숨기기
     st.markdown(
         """
@@ -171,27 +207,48 @@ def main_app():
         unsafe_allow_html=True,
     )
 
-    # 저장된 세션이 있으면 복원
+    # ✅ 수정: 저장된 세션 복원 로직 개선
     if not st.session_state.get("is_logged_in", False):
         saved_session = load_session()
         if saved_session and saved_session.get("is_logged_in"):
-            st.session_state["is_logged_in"] = True
-            st.session_state["auth_token"] = saved_session.get("auth_token")
+            saved_token = saved_session.get("auth_token")
 
-            if st.session_state["auth_token"]:
-                # 토큰으로 프로필 정보 복원
-                ok, user_info = backend_service.get_user_profile(
-                    st.session_state["auth_token"]
-                )
-                if ok:
-                    st.session_state["user_info"] = user_info
-                    # TODO: 다중 프로필을 지원하는 경우, 여기서 모든 프로필을 가져오는 API를 호출해야 합니다.
-                    # 현재는 기본 프로필만 가져옵니다.
-                    st.session_state["profiles"] = [user_info.get("profile")]
-                else:
-                    # 토큰이 만료되었거나 유효하지 않은 경우
-                    st.session_state["is_logged_in"] = False
-                    st.session_state["auth_token"] = None
+            # ✅ 토큰이 있는지 확인
+            if saved_token:
+                logger.info(f"✅ 저장된 세션에서 토큰 복원: {saved_token[:20]}...")
+                st.session_state["is_logged_in"] = True
+                st.session_state["auth_token"] = saved_token
+
+                # ✅ 프로필 로드 (실패해도 로그인 상태는 유지)
+                try:
+                    load_user_profiles_from_backend(saved_token)
+                except Exception as e:
+                    logger.warning(f"⚠️ 프로필 로드 실패: {e}")
+                    st.session_state["profiles"] = []
+            else:
+                logger.warning("⚠️ 저장된 세션에 토큰이 없습니다.")
+
+    # ✅ 로그인 상태이고 프로필이 비어있으면 다시 로드
+    if st.session_state.get("is_logged_in", False):
+        token = st.session_state.get("auth_token")
+
+        # ✅ 토큰 존재 여부 로깅
+        if not token:
+            logger.error("❌ 로그인 상태인데 토큰이 없습니다!")
+            logger.error(f"세션 키: {list(st.session_state.keys())}")
+        else:
+            logger.info(f"✅ 토큰 확인됨: {token[:20]}...")
+
+        # ✅ 프로필이 비어있으면 다시 로드
+        if (
+            not st.session_state.get("profiles")
+            or len(st.session_state["profiles"]) == 0
+        ):
+            if token:
+                logger.info("프로필이 비어있어 다시 로드합니다...")
+                load_user_profiles_from_backend(token)
+            else:
+                logger.error("토큰이 없어 프로필을 로드할 수 없습니다.")
 
     # 로그인 상태 확인
     if not st.session_state.get("is_logged_in", False):
@@ -200,17 +257,15 @@ def main_app():
     else:
         # 로그인 상태: 사이드바 렌더링
         render_sidebar()
+
         # 설정 모달과 마이페이지 모달은 동시에 열리지 않도록 처리
         if st.session_state.get("settings_modal_open", False):
-            # 설정 모달이 열려있으면 마이페이지 닫기
             st.session_state["show_profile"] = False
             render_settings_modal()
         elif st.session_state.get("show_profile", False):
-            # 마이페이지가 열려있으면 설정 모달 닫기
             st.session_state["settings_modal_open"] = False
             render_my_page_modal()
         else:
-            # 메인 챗봇 화면 (모달이 열려있지 않을 때만)
             render_chatbot_main()
 
 

@@ -396,30 +396,31 @@ def delete_user_account(user_uuid: str) -> Tuple[bool, str]:
 
 def _map_profile_row(row: Dict) -> Dict[str, Any]:
     """DB 행을 프론트엔드에서 사용하는 키 이름으로 변환합니다."""
+    # GENDER_MAPPING의 역방향 매핑
+    sex_reverse_map = {v: k for k, v in GENDER_MAPPING.items()}
+    insurance_reverse_map = {v: k for k, v in HEALTH_INSURANCE_MAPPING.items()}
+    livelihood_reverse_map = {v: k for k, v in BASIC_LIVELIHOOD_MAPPING.items()}
+
     return {
         "id": row.get("id"),
         "name": row.get("name"),
-        "birth_date": str(row["birth_date"]) if row.get("birth_date") else None,
-        "sex": GENDER_MAPPING.get(row.get("sex"), "M"),
-        "residency_sgg_code": row.get("residency_sgg_code"),
-        "median_income_ratio": (
+        "birthDate": str(row["birth_date"]) if row.get("birth_date") else None,
+        "gender": sex_reverse_map.get(row.get("sex"), "남성"),
+        "location": row.get("residency_sgg_code"),
+        "incomeLevel": (
             float(row.get("median_income_ratio"))
             if row.get("median_income_ratio")
             else None
         ),
-        "insurance_type": HEALTH_INSURANCE_MAPPING.get(row.get("insurance_type"), "EMPLOYED"),
-        "basic_benefit_type": BASIC_LIVELIHOOD_MAPPING.get(row.get("basic_benefit_type"), "NONE"),
-        "disability_grade": (
+        "healthInsurance": insurance_reverse_map.get(row.get("insurance_type"), "직장"),
+        "basicLivelihood": livelihood_reverse_map.get(row.get("basic_benefit_type"), "없음"),
+        "disabilityLevel": (
             int(row.get("disability_grade"))
             if row.get("disability_grade") is not None
             else None
         ),
-        "ltci_grade": row.get("ltci_grade"),
-        "pregnant_or_postpartum12m": (
-            "임신 또는 출산 후 12개월 이내"
-            if row.get("pregnant_or_postpartum12m")
-            else "해당 없음"
-        ),
+        "longTermCare": row.get("ltci_grade"),
+        "pregnancyStatus": "임신중" if row.get("pregnant_or_postpartum12m") else "없음",
     }
 
 
@@ -455,40 +456,27 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str,
                 # 메인 프로필 정보 매핑
                 profile_info = {}
                 if user_info.get("main_profile_id"):
-                    profile_info = {
+                    # _map_profile_row 함수를 재사용하여 데이터 구조를 일치시킵니다.
+                    # 단, 키 이름이 다르므로 매핑이 필요합니다.
+                    profile_row = {
                         "id": user_info.get("profile_id"),
                         "name": user_info.get("name"),
-                        "birthDate": (
-                            str(user_info.get("birth_date"))
-                            if user_info.get("birth_date")
-                            else None
-                        ),
+                        "birth_date": user_info.get("birth_date"),
                         "sex": user_info.get("sex"),
                         "residency_sgg_code": user_info.get("residency_sgg_code"),
-                        "median_income_ratio": (
-                            float(user_info.get("median_income_ratio"))
-                            if user_info.get("median_income_ratio")
-                            else None
-                        ),
+                        "median_income_ratio": user_info.get("median_income_ratio"),
                         "insurance_type": user_info.get("insurance_type"),
                         "basic_benefit_type": user_info.get("basic_benefit_type"),
-                        "disability_grade": (
-                            int(user_info.get("disability_grade"))
-                            if user_info.get("disability_grade") is not None
-                            else None
-                        ),
+                        "disability_grade": user_info.get("disability_grade"),
                         "ltci_grade": user_info.get("ltci_grade"),
-                        "pregnant_or_postpartum12m": (
-                            "임신 또는 출산 후 12개월 이내"
-                            if user_info.get("pregnant_or_postpartum12m")
-                            else "해당 없음"
-                        ),
+                        "pregnant_or_postpartum12m": user_info.get("pregnant_or_postpartum12m"),
                     }
+                    profile_info = _map_profile_row(profile_row)
 
                 # 최종 데이터 구조
                 final_data = {
-                    "user_uuid": str(user_info["id"]),
-                    "username": user_info["username"],
+                    "user_uuid": str(user_info["id"]), # users.id
+                    "userId": user_info["username"],
                     "main_profile_id": user_info["main_profile_id"],
                     "created_at": user_info.get("created_at"),
                     "updated_at": user_info.get("updated_at"),

@@ -96,7 +96,7 @@ def initialize_auth_state():
 
 
 # ==============================================================================
-# 2. 로그인 렌더링
+# 2. 로그인 렌더링11.17 수정
 # ==============================================================================
 
 
@@ -105,7 +105,6 @@ def render_login_tab():
     error_msg = st.session_state["auth_error"].get("login", "")
 
     with st.form("login_form"):
-        # ... (로그인 폼 UI 로직은 동일) ...
         st.text_input("아이디", value=data["userId"], key="login_id_input")
         st.text_input(
             "비밀번호", type="password", value=data["password"], key="login_pw_input"
@@ -134,16 +133,33 @@ def render_login_tab():
             st.session_state["auth_error"]["login"] = ""
             st.session_state["auth_token"] = response_data.get("access_token")
 
-            # 로그인 성공 후, 토큰을 사용하여 프로필 정보 가져오기
-            profile_ok, profile_data = backend_service.get_user_profile(
-                st.session_state["auth_token"]
-            )
+            # 🔥 로그인 성공 후, 사용자 정보와 모든 프로필 가져오기
+            token = st.session_state["auth_token"]
+
+            # 1. 사용자 기본 정보 조회
+            profile_ok, profile_data = backend_service.get_user_profile(token)
             if profile_ok:
                 st.session_state["user_info"] = profile_data
-                # TODO: 다중 프로필 로직 추가 필요
-                st.session_state["profiles"] = [profile_data.get("profile")]
 
-            save_session(st.session_state["user_info"], st.session_state["auth_token"])
+            # 2. 🔥 모든 프로필 목록 조회
+            all_profiles_ok, all_profiles = backend_service.get_all_profiles(token)
+            if all_profiles_ok and all_profiles:
+                # main_profile_id로 활성 프로필 표시
+                main_profile_id = (
+                    profile_data.get("main_profile_id") if profile_ok else None
+                )
+
+                for p in all_profiles:
+                    p_id = p.get("id")
+                    p["isActive"] = p_id == main_profile_id
+
+                st.session_state["profiles"] = all_profiles
+            else:
+                # 프로필이 없는 경우 빈 리스트
+                st.session_state["profiles"] = []
+
+            # 세션 저장
+            save_session(st.session_state.get("user_info", {}), token)
         else:
             st.session_state["auth_error"]["login"] = response_data
         st.rerun()
@@ -395,7 +411,9 @@ def render_signup_tab():
                 "basic_benefit_type": st.session_state.basic_benefit_type,
                 "disability_grade": disability_map.get(selected_disability, "0"),
                 "ltci_grade": longterm_map.get(selected_longterm, "NONE"),
-                "pregnant_or_postpartum12m": st.session_state.get("pregnant_or_postpartum12m", ""),
+                "pregnant_or_postpartum12m": st.session_state.get(
+                    "pregnant_or_postpartum12m", ""
+                ),
             }
 
             # 비밀번호 일치 확인 (필수 항목이므로 여기서 체크)
@@ -408,9 +426,7 @@ def render_signup_tab():
 
             # 이름 필드 확인
             if not st.session_state.get("name", "").strip():
-                st.session_state["auth_error"][
-                    "signup"
-                ] = "이름은 필수 정보입니다."
+                st.session_state["auth_error"]["signup"] = "이름은 필수 정보입니다."
                 st.rerun()
                 return
 

@@ -206,8 +206,18 @@ class BackendService:
         except requests.exceptions.RequestException as e:
             return False, f"프로필 삭제 실패: {e}"
 
-    def set_main_profile(self, token: str, profile_id: int) -> Tuple[bool, str]:
+    def set_main_profile(
+        self, token: str, profile_id: Optional[int]
+    ) -> Tuple[bool, str]:
         """메인 프로필을 변경합니다."""
+
+        # 🔥 profile_id 유효성 검사 추가
+        if profile_id is None:
+            return False, "프로필 ID가 제공되지 않았습니다."
+
+        if not isinstance(profile_id, int) or profile_id <= 0:
+            return False, f"유효하지 않은 프로필 ID입니다: {profile_id}"
+
         url = f"{FASTAPI_BASE_URL}/api/v1/user/profile/main/{profile_id}"
         headers = {"Authorization": f"Bearer {token}"}
         try:

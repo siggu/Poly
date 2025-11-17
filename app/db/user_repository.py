@@ -5,6 +5,7 @@ import uuid
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import Dict, Any, Tuple, Optional, List
+from datetime import date, datetime
 from .db_core import get_db_connection
 from .normalizer import (
     _normalize_birth_date,
@@ -18,6 +19,18 @@ from .normalizer import (
 )
 
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------
+# 0. 헬퍼 함수: date/datetime 객체를 ISO 문자열로 변환
+# --------------------------------------------------
+
+
+def _serialize_date(value):
+    """date 또는 datetime 객체를 ISO 문자열로 변환합니다."""
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return value
+
 
 # --------------------------------------------------
 # 1. 헬퍼 함수: DB에서 조회된 데이터를 API 응답 형식으로 변환 (아웃바운드)
@@ -40,10 +53,9 @@ def _transform_db_to_api(user_dict: Dict[str, Any]) -> Dict[str, Any]:
     # 임신 상태 (True/False -> 임신중/없음)
     pregnancy_status_api = "임신중" if user_dict.get("pregnancyStatus") else "없음"
 
-    # 생년월일 (date 객체 -> str)
-    birth_date_str = (
-        str(user_dict.get("birthDate", "")) if user_dict.get("birthDate") else ""
-    )
+    # 🔥 생년월일 (date 객체 -> ISO 문자열)
+    birth_date_value = user_dict.get("birthDate")
+    birth_date_str = _serialize_date(birth_date_value) if birth_date_value else ""
 
     # 소득 수준 (Decimal -> float)
     income_level_float = (
@@ -60,9 +72,11 @@ def _transform_db_to_api(user_dict: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     result = {
-        "id": user_dict.get("id"),
+        "id": user_dict.get("id"),  # 🔥 profile id 추가
+        "user_uuid": user_dict.get("user_id"),  # user_uuid는 profiles.user_id에서
         "main_profile_id": user_dict.get("main_profile_id"),
         "userId": user_dict.get("username"),
+        "username": user_dict.get("username"),
         "name": user_dict.get("name"),
         "birthDate": birth_date_str,
         "gender": gender_api,
@@ -75,7 +89,7 @@ def _transform_db_to_api(user_dict: Dict[str, Any]) -> Dict[str, Any]:
         "pregnancyStatus": pregnancy_status_api,
     }
 
-    # main_profile_id가 None이면 제거 (get_user_by_username에서 이 키가 없으므로 유연하게 처리)
+    # main_profile_id가 None이면 제거
     if "main_profile_id" in result and result["main_profile_id"] is None:
         del result["main_profile_id"]
 
@@ -89,7 +103,7 @@ def _transform_db_to_api(user_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
-    새로운 사용자의 인증 ���보 (users), 기본 프로필 (profiles),
+    새로운 사용자의 인증 정보 (users), 기본 프로필 (profiles),
     및 초기 컬렉션 (collections) 정보를 트랜잭션으로 삽입합니다.
     """
     conn = get_db_connection()
@@ -97,7 +111,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "데이터베이스 연결 실패"
 
     username = user_data.get("username", "").strip()
-    password_hash = user_data.get("password", "").strip()
+    password_hash = user_data.get("password_hash", "").strip()
 
     if not username or not password_hash:
         return False, "아이디와 비밀번호는 필수 입력 항목입니다."
@@ -108,7 +122,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
         with conn.cursor() as cursor:
             user_insert_query = """
             INSERT INTO users (id, username, password_hash, main_profile_id, created_at, updated_at, id_uuid)
-            VALUES (%s::uuid, %s, %s, %s, NOW(), NOW(), %s::uuid);
+            VALUES (%s::uuid, %s, %s, NULL, NOW(), NOW(), %s::uuid);
             """
             cursor.execute(
                 user_insert_query, (new_user_id, username, password_hash, new_user_id)
@@ -116,33 +130,36 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
             logger.info(f"1. users 테이블에 삽입 완료. user_id: {new_user_id}")
 
             # ******* normalizer 모듈을 사용하여 데이터 정규화 *******
-            birth_date_str = _normalize_birth_date(user_data.get("birthDate"))
+            birth_date_str = _normalize_birth_date(user_data.get("birth_date"))
             name = user_data.get("name", "").strip() or None
-            sex = _normalize_sex(user_data.get("gender", ""))
+            sex = _normalize_sex(user_data.get("sex", ""))
             residency_sgg_code = user_data.get("residency_sgg_code", "").strip() or None
             insurance_type = _normalize_insurance_type(
                 user_data.get("insurance_type", "")
             )
-            median_income_ratio = _normalize_income_ratio(user_data.get("incomeLevel"))
+            median_income_ratio = _normalize_income_ratio(
+                user_data.get("median_income_ratio")
+            )
             basic_benefit_type = _normalize_benefit_type(
-                user_data.get("basicLivelihood", "NONE")
+                user_data.get("basic_benefit_type", "NONE")
             )
             disability_grade = _normalize_disability_grade(
-                user_data.get("disabilityLevel", "0")
+                user_data.get("disability_grade", "0")
             )
-            ltci_grade = _normalize_ltci_grade(user_data.get("longTermCare", "NONE"))
+            ltci_grade = _normalize_ltci_grade(user_data.get("ltci_grade", "NONE"))
             pregnant_or_postpartum12m = _normalize_pregnant_status(
-                user_data.get("pregnancyStatus", "없음")
+                user_data.get("pregnant_or_postpartum12m", "없음")
             )
             # *******************************************************
 
+            # 🔥 SQL 문법 오류 수정: 마지막 쉼표 제거
             profile_insert_query = """
             INSERT INTO profiles (
-                user_id,  birth_date, sex, residency_sgg_code, insurance_type,
+                user_id, birth_date, sex, residency_sgg_code, insurance_type,
                 median_income_ratio, basic_benefit_type, disability_grade,
-                ltci_grade, pregnant_or_postpartum12m, updated_at, name,
+                ltci_grade, pregnant_or_postpartum12m, updated_at, name
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
             RETURNING id; 
             """
             profile_data_tuple = (
@@ -205,6 +222,28 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
             conn.rollback()
         logger.error(f"프로필 저장 중 예상치 못한 오류: {username} - {e}")
         return False, f"예상치 못한 오류 발생: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_user_uuid_by_username(username: str) -> Optional[str]:
+    """username으로 user_uuid를 조회합니다."""
+    conn = get_db_connection()
+    if not conn:
+        logger.error(f"DB 연결 실패: {username}")
+        return None
+    try:
+        query = "SELECT id FROM users WHERE username = %s"
+        with conn.cursor() as cursor:
+            cursor.execute(query, (username,))
+            result = cursor.fetchone()
+            if result:
+                return str(result[0])
+            return None
+    except Exception as e:
+        logger.error(f"user_uuid 조회 중 오류: {username} - {e}")
+        return None
     finally:
         if conn:
             conn.close()
@@ -456,11 +495,11 @@ def add_profile(
 
             query = """
             INSERT INTO profiles (
-                user_id,birth_date, sex, residency_sgg_code, insurance_type,
+                user_id, birth_date, sex, residency_sgg_code, insurance_type,
                 median_income_ratio, basic_benefit_type, disability_grade,
                 ltci_grade, pregnant_or_postpartum12m, updated_at, name
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
             RETURNING id;
             """
             data_tuple = (
@@ -525,6 +564,7 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
 
             # *******************************************************
 
+            # 🔥 파라미터 순서 수정: profile_id는 WHERE 절 마지막에
             query = """
             UPDATE profiles SET
                 birth_date = %s, sex = %s, residency_sgg_code = %s, insurance_type = %s,
@@ -533,7 +573,6 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             WHERE id = %s;
             """
             data_tuple = (
-                profile_id,
                 birth_date_str,
                 sex,
                 residency_sgg_code,
@@ -544,6 +583,7 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
                 ltci_grade,
                 pregnant_or_postpartum12m,
                 name,
+                profile_id,  # WHERE 절 마지막
             )
             cursor.execute(query, data_tuple)
             conn.commit()
@@ -604,7 +644,7 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
             p.pregnant_or_postpartum12m AS "pregnancyStatus", p.user_id, p.name AS "name"
         FROM profiles p
         WHERE p.user_id = %s
-        ORDER BY p.id; -- 정렬 기준 추가
+        ORDER BY p.id;
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(query, (user_uuid,))
@@ -614,14 +654,18 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
             for profile in profiles:
                 p_dict = dict(profile)
 
-                # _transform_db_to_api 대신 전용 헬퍼 함수를 사용하는 것이 더 명확합니다.
-                # 그러나 기존 _transform_db_to_api를 그대로 사용하려면 다음과 같이 유지합니다.
-                transformed = _transform_db_to_api(p_dict)
-                transformed.pop("main_profile_id", None)
-                transformed.pop("userId", None)  # userId는 username을 의미하므로 제거
+                # 🔥 id 필드를 먼저 저장
+                profile_id = p_dict.get("id")
 
-                # **또는**
-                # transformed = _transform_profile_list_to_api(p_dict)
+                # date 직렬화 처리
+                transformed = _transform_db_to_api(p_dict)
+
+                # 🔥 id 필드를 명시적으로 보존
+                transformed["id"] = profile_id
+
+                # 불필요한 필드 제거
+                transformed.pop("main_profile_id", None)
+                transformed.pop("userId", None)
 
                 result_profiles.append(transformed)
 

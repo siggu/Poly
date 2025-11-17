@@ -3,8 +3,12 @@
 from datetime import date
 import streamlit as st
 from typing import Optional
+import logging
 from ..backend_service import backend_service
 from ..utils.template_loader import load_css
+
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 
 def _parse_birthdate(value):
@@ -44,10 +48,27 @@ def is_profile_incomplete(profile):
     return False
 
 
+def _get_profile_id(profile):
+    """프로필 ID를 안전하게 추출합니다. (None 방지)"""
+    profile_id = profile.get("id") or profile.get("user_id")
+    if profile_id is None:
+        st.error(f"프로필 ID를 찾을 수 없습니다: {profile}")
+        return None
+    return int(profile_id)
+
+
 def handle_profile_switch(profile_id):
+    # 🔥 profile_id 유효성 검사 추가
+    if profile_id is None:
+        st.error("프로필 ID가 제공되지 않았습니다.")
+        return
+
     for p in st.session_state.profiles:
-        p_id = p.get('id') or p.get('user_id')
+        p_id = _get_profile_id(p)
+        if p_id is None:
+            continue
         p["isActive"] = p_id == profile_id
+
     # 영구 저장
     token = _get_auth_token()
     if token:
@@ -62,6 +83,11 @@ def handle_profile_switch(profile_id):
 
 
 def handle_delete_profile(profile_id):
+    # 🔥 profile_id 유효성 검사 추가
+    if profile_id is None:
+        st.error("삭제할 프로필 ID가 없습니다.")
+        return
+
     if len(st.session_state.profiles) <= 1:
         st.warning("최소한 하나의 프로필은 남겨야 합니다.")
         return  # Do not proceed with deletion if only one profile exists
@@ -73,25 +99,30 @@ def handle_delete_profile(profile_id):
         if success:
             st.success("프로필이 삭제되었습니다.")
 
-            # 삭제된 프로필이 활성 프로필이었다면, 새로운 활성 프로필 설정
+            # 삭제된 프로필이 활성 프로필이었는지 확인
             is_active_deleted = any(
-                (p.get('id') or p.get('user_id')) == profile_id and p.get("isActive")
+                _get_profile_id(p) == profile_id and p.get("isActive")
                 for p in st.session_state.profiles
             )
 
             # 로컬 세션에서도 삭제
             st.session_state.profiles = [
-                p for p in st.session_state.profiles if (p.get('id') or p.get('user_id')) != profile_id
+                p for p in st.session_state.profiles if _get_profile_id(p) != profile_id
             ]
 
             if is_active_deleted and st.session_state.profiles:
                 # 남은 프로필 중 첫 번째를 새 활성 프로필로 지정
-                new_active_profile_id = st.session_state.profiles[0].get('id') or st.session_state.profiles[0].get('user_id')
-                success_activate, msg_activate = backend_service.set_main_profile(
-                    token, new_active_profile_id
-                )
-                if not success_activate:
-                    st.error(f"새 활성 프로필 설정 중 오류 발생: {msg_activate}")
+                new_active_profile_id = _get_profile_id(st.session_state.profiles[0])
+
+                # 🔥 None 체크 추가
+                if new_active_profile_id is not None:
+                    success_activate, msg_activate = backend_service.set_main_profile(
+                        token, new_active_profile_id
+                    )
+                    if not success_activate:
+                        st.error(f"새 활성 프로필 설정 중 오류 발생: {msg_activate}")
+                else:
+                    st.error("새 활성 프로필 ID를 찾을 수 없습니다.")
             elif not st.session_state.profiles:
                 # 모든 프로필이 삭제된 경우 main_profile_id를 NULL로 설정
                 # 이 로직은 백엔드에서 처리하거나, 별도 API가 필요할 수 있습니다.
@@ -117,24 +148,42 @@ def handle_add_profile(new_profile_data):
 
             # 새로 추가된 프로필을 활성 상태로 설정하고 DB에 반영
             new_profile_id = response_data.get("id")
-            if new_profile_id:
-                set_main_ok, _ = backend_service.set_main_profile(token, new_profile_id)
+
+            # 🔥 None 체크 추가
+            if new_profile_id is not None:
+                set_main_ok, msg = backend_service.set_main_profile(
+                    token, new_profile_id
+                )
                 if set_main_ok:
                     _refresh_profiles_from_db()
-
+                else:
+                    st.error(f"새 프로필을 메인으로 설정하는데 실패했습니다: {msg}")
+            else:
+                st.error("새 프로필 ID를 받지 못했습니다.")
         else:
             st.error(f"프로필 추가 중 오류 발생: {response_data}")
         st.rerun()
 
 
 def handle_start_edit(profile):
-    st.session_state.editingProfileId = profile["id"]
+    profile_id = _get_profile_id(profile)
+    if profile_id is None:
+        st.error("편집할 프로필 ID를 찾을 수 없습니다.")
+        return
+
+    st.session_state.editingProfileId = profile_id
     st.session_state.editingData = profile.copy()
     st.rerun()
 
 
 def handle_save_edit(edited_data):
     pid = st.session_state.editingProfileId
+
+    # 🔥 None 체크 추가
+    if pid is None:
+        st.error("편집 중인 프로필 ID가 없습니다.")
+        return
+
     if not edited_data.get("name") or not edited_data.get("location"):
         st.error(
             "프로필 이름과 거주지는 필수 입력 항목입니다. 편집 내용을 확인해주세요."
@@ -148,7 +197,9 @@ def handle_save_edit(edited_data):
         update_payload.pop("isActive", None)
         update_payload.pop("id", None)
 
-        success, message = backend_service.update_user_profile(token, pid, update_payload)
+        success, message = backend_service.update_user_profile(
+            token, pid, update_payload
+        )
         if success:
             st.session_state.editingProfileId = None
             st.session_state.editingData = {}
@@ -161,7 +212,14 @@ def handle_save_edit(edited_data):
 
 def _get_auth_token() -> Optional[str]:
     """세션에서 인증 토큰을 가져옵니다."""
-    return st.session_state.get("auth_token")
+    token = st.session_state.get("auth_token")
+
+    # 🔥 디버깅: 토큰 확인
+    if not token:
+        logger.warning("auth_token이 세션에 없습니다.")
+        logger.debug(f"현재 세션 상태: {list(st.session_state.keys())}")
+
+    return token
 
 
 def handle_cancel_edit():
@@ -174,29 +232,69 @@ def _get_user_main_profile_id() -> Optional[int]:
     """세션 상태에서 사용자의 main_profile_id를 조회합니다."""
     user_info = st.session_state.get("user_info", {})
     if isinstance(user_info, dict):
-        return user_info.get("main_profile_id")
+        main_id = user_info.get("main_profile_id")
+        if main_id is not None:
+            return int(main_id)
     return None
 
 
 def _refresh_profiles_from_db():
     """DB에서 최신 프로필 목록을 가져와 세션 상태를 업데이트합니다."""
     token = _get_auth_token()
-    if token:
-        ok, profiles_list = backend_service.get_all_profiles(token)
-        if ok and profiles_list:
-            main_profile_id = _get_user_main_profile_id()
-            for p in profiles_list:
-                p_id = p.get('id') or p.get('user_id')
-                p["isActive"] = p_id == main_profile_id
-            st.session_state.profiles = profiles_list
-            return True
-    return False
+    if not token:
+        # logger 대신 Streamlit 경고 사용
+        # st.warning("토큰이 없어 프로필을 불러올 수 없습니다.")
+        return False
+
+    ok, profiles_list = backend_service.get_all_profiles(token)
+    if not ok:
+        # st.error(f"프로필 목록 조회 실패: {profiles_list}")
+        return False
+
+    if not profiles_list:
+        # st.info("프로필 목록이 비어있습니다.")
+        st.session_state.profiles = []
+        return False
+
+    # main_profile_id 조회
+    main_profile_id = _get_user_main_profile_id()
+
+    # 각 프로필에 isActive 설정
+    for p in profiles_list:
+        p_id = _get_profile_id(p)
+        if p_id is not None:
+            p["isActive"] = p_id == main_profile_id
+        else:
+            p["isActive"] = False
+
+    st.session_state.profiles = profiles_list
+    # st.success(f"프로필 {len(profiles_list)}개를 성공적으로 로드했습니다.")
+    return True
 
 
 def render_my_page_modal():
     """마이페이지 모달 렌더링 (프로필 추가 / 편집 기능 포함)"""
     # 마이페이지 모달에 필요한 CSS 파일을 로드합니다.
     load_css("my_page.css")
+
+    # 🔥 로그인 상태 확인
+    if not st.session_state.get("is_logged_in", False):
+        st.error("로그인이 필요합니다.")
+        return
+
+    # 🔥 토큰 확인
+    token = _get_auth_token()
+    if not token:
+        st.error("인증 토큰이 없습니다. 다시 로그인해주세요.")
+        logger.error(f"토큰 없음. 세션 키: {list(st.session_state.keys())}")
+        return
+
+    # 🔥 세션 초기화 대비: 항상 프로필 목록 확인 및 로드
+    if not st.session_state.get("profiles") or len(st.session_state.profiles) == 0:
+        success = _refresh_profiles_from_db()
+        if not success:
+            st.error("프로필을 불러오는데 실패했습니다. 다시 시도해주세요.")
+            return
 
     col_title, col_close = st.columns([9, 1])
     with col_title:
@@ -211,10 +309,6 @@ def render_my_page_modal():
 
     st.markdown("#### 프로필 관리")
     if not st.session_state.get("isAddingProfile", False):
-        # 프로필 목록이 비어있으면 DB에서 로드 시도
-        if not st.session_state.profiles:
-            _refresh_profiles_from_db()
-
         if st.button("➕ 프로필 추가", key="btn_add_profile", use_container_width=True):
             st.session_state["isAddingProfile"] = True
             st.session_state["newProfile"] = {}
@@ -293,7 +387,9 @@ def render_my_page_modal():
                 if st.form_submit_button("추가", use_container_width=True):
                     new_profile_data = {
                         "name": name.strip(),
-                        "birthDate": birth,
+                        "birthDate": (
+                            birth.isoformat() if isinstance(birth, date) else str(birth)
+                        ),
                         "gender": gender,
                         "location": location.strip(),
                         "healthInsurance": health,
@@ -330,8 +426,10 @@ def render_my_page_modal():
             st.write(f"- 생년월일: {birth_display}")
             st.write(f"- 거주지: {active_profile.get('location', '미입력')}")
         with col_edit:
-            profile_id = active_profile.get('id') or active_profile.get('user_id')
-            if st.button("✏️", key=f"btn_edit_profile_{profile_id}"):
+            profile_id = _get_profile_id(active_profile)
+            if profile_id is not None and st.button(
+                "✏️", key=f"btn_edit_profile_{profile_id}"
+            ):
                 st.session_state["editingProfileId"] = profile_id
                 st.session_state["editingData"] = active_profile.copy()
                 st.rerun()
@@ -389,7 +487,9 @@ def render_my_page_modal():
                     edited_data = {
                         "id": st.session_state.editingProfileId,
                         "name": name.strip(),
-                        "birthDate": birth,
+                        "birthDate": (
+                            birth.isoformat() if isinstance(birth, date) else str(birth)
+                        ),
                         "gender": gender,
                         "location": location.strip(),
                         "healthInsurance": health,
@@ -417,13 +517,13 @@ def render_my_page_modal():
                 f"- {profile.get('name', '무명')} ({profile.get('location','미입력')})"
             )
         with cols[1]:
-            profile_id = profile.get('id') or profile.get('user_id')
-            if st.button("선택", key=f"select_{profile_id}"):
+            profile_id = _get_profile_id(profile)
+            if profile_id is not None and st.button("선택", key=f"select_{profile_id}"):
                 handle_profile_switch(profile_id)
                 # handle_profile_switch already saves to DB and reruns
         with cols[2]:
-            profile_id = profile.get('id') or profile.get('user_id')
-            if st.button("삭제", key=f"del_{profile_id}"):
+            profile_id = _get_profile_id(profile)
+            if profile_id is not None and st.button("삭제", key=f"del_{profile_id}"):
                 handle_delete_profile(profile_id)
     st.markdown("---")
 
