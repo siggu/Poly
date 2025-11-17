@@ -330,6 +330,17 @@ def main():
                     "https://www.ydp.go.kr/health/contents.do?key=6073&",
                     "https://www.songpa.go.kr/ehealth/contents.do?key=4525&",
                     "https://jongno.go.kr/Health.do?menuId=401309&menuNo=401309",
+                    "https://www.nowon.kr/health/healthIncrz/healthIncrz1/healthIncrz1_02.jsp",
+                    "https://health.dobong.go.kr/Contents.asp?code=10005042",
+                    "https://www.ddm.go.kr/health/contents.do?key=1257",
+                    "https://www.mapo.go.kr/site/health/content/health04021401",
+                    "https://www.sd.go.kr/health/contents.do?key=2284&",
+                    "https://www.yangcheon.go.kr/health/health/02/10201010000002024022101.jsp",
+                    "https://www.yongsan.go.kr/health/main/contents.do?menuNo=300064",
+                    "https://www.ep.go.kr/health/contents.do?key=1582",
+                    "https://www.junggu.seoul.kr/health/content.do?cmsid=15845",
+                    "https://www.jungnang.go.kr/health/bbs/list/B0000412.do?menuNo=400364#n",
+                    "https://www.nhis.or.kr/nhis/minwon/wbhapa01000m01.do",
                 ]
 
             eprint(f"[district] {len(urls)}개 URL 처리 (메모리 수집)")
