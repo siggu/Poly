@@ -10,6 +10,7 @@ app/run_cli.py
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from uuid import uuid4
@@ -17,6 +18,9 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 load_dotenv()
+
+os.environ.setdefault("LANGSMITH_TRACING", "true")
+os.environ.setdefault("LANGSMITH_PROJECT", "HealthInformer")
 
 from app.agents.service_graph import build_graph  # noqa: E402
 from app.langgraph.state.ephemeral_context import State  # noqa: E402
@@ -174,6 +178,23 @@ def _print_rag_snippets(result: Dict[str, Any]) -> None:
             print(f" (현재 참조 중인 스니펫이 없습니다. {'; '.join(debug_parts)})\n")
         else:
             print(" (현재 참조 중인 스니펫이 없습니다.)\n")
+
+        messages = result.get("messages")
+        tool_logs: List[str] = []
+        if isinstance(messages, list):
+            for msg in messages[-6:]:
+                if not isinstance(msg, dict):
+                    continue
+                if msg.get("role") != "tool":
+                    continue
+                content = (msg.get("content") or "").strip()
+                if content:
+                    tool_logs.append(content)
+        if tool_logs:
+            print("[디버그] 최근 tool 메시지:")
+            for log in tool_logs:
+                print(f"  - {log}")
+            print()
         return
 
     for idx, snippet in enumerate(snippets, start=1):

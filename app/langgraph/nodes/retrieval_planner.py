@@ -350,7 +350,7 @@ def plan(state: State) -> State:
         "used_rag": use_rag,
         "profile_ctx": merged_profile,
         "collection_ctx": merged_collection,
-        "rag_snippets": rag_docs,
+        "rag_snippets": rag_ㅁdocs,
         "keywords": keywords,
     }
 

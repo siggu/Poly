@@ -100,6 +100,7 @@ class EphemeralContextState(TypedDict, total=False):
     ephemeral_collection: Dict[str, Any]  # 세션 중 추출된 관심사/사례 정보 등
 
     # ── RAG 관련 ────────────────────────────────────────
+    retrieval: Dict[str, Any]            # retrieval_planner 집계 결과
     rag_snippets: Annotated[List[RagSnippet], operator.add]
     retrieval_meta: Dict[str, Any]      # 적용된 필터, 쿼리, k, 소요시간 등
 
