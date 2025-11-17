@@ -200,15 +200,29 @@ def _hybrid_search_documents(
 
     results: List[Dict[str, Any]] = []
     for r in rows:
+        similarity = float(r[6]) if r[6] is not None else None
+        requirements = (r[2] or "").strip() if isinstance(r[2], str) else None
+        benefits = (r[3] or "").strip() if isinstance(r[3], str) else None
+        region = (r[4] or "").strip() if isinstance(r[4], str) else None
+        url = (r[5] or "").strip() if isinstance(r[5], str) else None
+
+        snippet_lines: List[str] = []
+        if requirements:
+            snippet_lines.append(f"[신청 요건]\n{requirements}")
+        if benefits:
+            snippet_lines.append(f"[지원 내용]\n{benefits}")
+        snippet_text = "\n\n".join(snippet_lines).strip()
+
         results.append(
             {
                 "doc_id": r[0],
-                "title": r[1],
-                "requirements": r[2],
-                "benefits": r[3],
-                "region": r[4],
-                "url": r[5],
-                "similarity": float(r[6]) if r[6] is not None else None,
+                "title": (r[1] or "").strip() if isinstance(r[1], str) else None,
+                "requirements": requirements,
+                "benefits": benefits,
+                "region": region,
+                "url": url,
+                "similarity": similarity,
+                "snippet": snippet_text,
             }
         )
 
@@ -218,17 +232,22 @@ def _hybrid_search_documents(
     # rag_snippets 포맷으로 재구성
     snippets: List[Dict[str, Any]] = []
     for r in results:
-        snippets.append(
-            {
-                "doc_id": r["doc_id"],
-                "title": r["title"],
-                "requirements": r["requirements"],
-                "benefits": r["benefits"],
-                "region": r["region"],
-                "url": r["url"],
-                "score": r["similarity"],
-            }
-        )
+        snippet_entry: Dict[str, Any] = {
+            "doc_id": r["doc_id"],
+            "title": r["title"],
+            "source": r["region"] or "policy_db",
+            "snippet": r["snippet"] or r["benefits"] or r["requirements"] or "",
+            "score": r["similarity"],
+        }
+        if r["region"]:
+            snippet_entry["region"] = r["region"]
+        if r["url"]:
+            snippet_entry["url"] = r["url"]
+        if r["requirements"]:
+            snippet_entry["requirements"] = r["requirements"]
+        if r["benefits"]:
+            snippet_entry["benefits"] = r["benefits"]
+        snippets.append(snippet_entry)
 
     return snippets, keywords
 
@@ -350,9 +369,11 @@ def plan(state: State) -> State:
         "used_rag": use_rag,
         "profile_ctx": merged_profile,
         "collection_ctx": merged_collection,
-        "rag_snippets": rag_ㅁdocs,
+        "rag_snippets": rag_docs,
         "keywords": keywords,
     }
+
+    state["rag_snippets"] = rag_docs
 
     return state
 
