@@ -1,5 +1,5 @@
 """Pydantic 스키마 정의 파일입니다.
-사용자, 인증, 프로필 등 다양한 데이터 구조를 정의합니다. 11.13 수정"""
+사용자, 인증, 프로필 등 다양한 데이터 구조를 정의합니다. 11.14수정(컬럼수정)"""
 
 from pydantic import BaseModel, Field
 from typing import Optional

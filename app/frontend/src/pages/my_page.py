@@ -1,4 +1,4 @@
-"""마이페이지 관련 함수들 11.13 수정"""
+"""마이페이지 관련 함수들 11.14 수정"""
 
 from datetime import date
 import streamlit as st
