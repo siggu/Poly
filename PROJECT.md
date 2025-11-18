@@ -9,7 +9,7 @@
 - **백엔드 (Backend)**: `FastAPI` 프레임워크를 사용하여 구축되었습니다. 데이터베이스 관리, 사용자 인증, LLM 연동 등 핵심 비즈니스 로직을 처리하고, 프론트엔드에 `REST API`를 제공합니다.
 - **프론트엔드 (Frontend)**: `Streamlit` 프레임워크를 사용하여 구축되었습니다. 사용자에게 보여지는 웹 UI를 렌더링하고, 사용자의 입력을 받아 백엔드 API와 통신하여 결과를 표시합니다.
 
-```
+```text
 ┌──────────────────┐     HTTP 요청     ┌──────────────────┐
 │ Frontend         │  (JSON, Stream)   │ Backend          │
 │ (Streamlit)      ├───────────────────► (FastAPI)        │
@@ -28,19 +28,19 @@
 
 ### 2.1 백엔드 API 계층 (`app/api/`)
 
-```
+```text
 app/api/
 └── v1/
-    ├── chat.py              # 챗봇 API 엔드포인트
-    │   ├── POST /stream     # LLM 응답 스트리밍
-    │   └── POST /history    # 채팅 히스토리 조회
+    ├── chat.py              # 챗봇 API 엔드포인트 
+    │   ├── POST /stream     # LLM 응답 스트리밍 
+    │   └── POST /history    # 채팅 히스토리 저장
     │
     └── user.py              # 사용자 인증/프로필 API 엔드포인트
         ├── POST /register   # 회원가입
         ├── POST /login      # 로그인
         ├── GET /profile     # 프로필 조회
-        ├── PUT /profile     # 프로필 수정
-        └── DELETE /profile  # 프로필 삭제
+        ├── PATCH /profile/{profile_id} # 프로필 수정
+        └── DELETE /profile/{profile_id} # 프로필 삭제
 ```
 
 **역할:**
@@ -131,18 +131,20 @@ app/frontend/
 │   ├── pages/
 │   │   ├── chat.py          # 챗봇 페이지
 │   │   │   ├── 메시지 입력 UI
-│   │   │   ├── 메시지 표시
-│   │   │   └── 스트리밍 응답 처리
+│   │   │   ├── 대화 내용 표시
+│   │   │   ├── 스트리밍 응답 처리
+│   │   │   └── 대화 저장/초기화 기능
 │   │   │
 │   │   ├── login.py         # 로그인/회원가입 페이지
 │   │   │   ├── 로그인 폼
 │   │   │   ├── 회원가입 폼
 │   │   │   └── 인증 처리
 │   │   │
-│   │   ├── my_page.py       # 마이페이지
+│   │   ├── my_page.py       # 마이페이지 (계정 관리 포함)
 │   │   │   ├── 사용자 정보 표시
 │   │   │   ├── 프로필 수정
-│   │   │   └── 채팅 히스토리
+│   │   │   ├── 비밀번호 변경
+│   │   │   └── 회원 탈퇴
 │   │   │
 │   │   └── settings.py      # 설정 페이지
 │   │       ├── 사용자 설정
@@ -230,7 +232,7 @@ app/frontend/
 - **목적**: 챗봇 관련 API 엔드포인트 정의
 - **주요 기능**:
   - `POST /stream`: 사용자 질문에 대한 LLM 응답을 스트리밍으로 제공
-  - `POST /history`: 사용자의 채팅 히스토리 조회
+  - `POST /history`: 사용자의 채팅 히스토리 저장
 - **의존성**: `llm_manager`, `user_repository`
 
 #### `user.py`
@@ -241,6 +243,7 @@ app/frontend/
   - `GET /profile`: 현재 사용자 프로필 조회
   - `PATCH /profile/{profile_id}`: 프로필 정보 수정
   - `GET /profiles`: 모든 프로필 조회
+  - `PUT /password`: 비밀번호 변경
   - `POST /profile`: 새 프로필 추가
   - `DELETE /profile/{profile_id}`: 프로필 삭제
   - `PUT /profile/main/{profile_id}`: 메인 프로필 변경
@@ -343,8 +346,9 @@ app/frontend/
 - **목적**: 메인 챗봇 인터페이스
 - **주요 기능**:
   - 메시지 입력 UI
-  - 메시지 히스토리 표시
+  - 대화 내용 표시
   - `backend_service.stream_chat()`을 통한 스트리밍 응답 처리
+  - 대화 저장 및 세션 초기화 기능
   - 실시간 응답 표시
 
 #### `src/backend_service.py`

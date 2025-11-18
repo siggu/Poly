@@ -1,4 +1,5 @@
 """설정 페이지 관련 함수들 11.13 수정"""
+
 import uuid
 import time
 import streamlit as st
@@ -23,10 +24,6 @@ def initialize_settings_state():
         st.session_state.show_delete_confirm = False
     if "show_password_reset" not in st.session_state:
         st.session_state.show_password_reset = False
-    if "password_data" not in st.session_state:
-        st.session_state.password_data = {"current": "", "new": "", "confirm": ""}
-    if "password_error" not in st.session_state:
-        st.session_state.password_error = ""
 
 
 def _get_auth_token() -> Optional[str]:
@@ -41,75 +38,6 @@ def handle_font_size_change(size):
 
 def update_notification(key):
     st.session_state.notifications[key] = st.session_state[f"switch_{key}"]
-
-
-def handle_password_reset():
-    data = st.session_state.password_data
-    if not data["current"] or not data["new"] or not data["confirm"]:
-        st.session_state.password_error = "모든 필드를 입력해주세요."
-        return
-    if data["new"] != data["confirm"]:
-        st.session_state.password_error = "새 비밀번호가 일치하지 않습니다."
-        return
-    if len(data["new"]) < 8:
-        st.session_state.password_error = "비밀번호는 8자 이상이어야 합니다."
-        return
-
-    token = _get_auth_token()
-    if not token:
-        st.session_state.password_error = "로그인 정보를 찾을 수 없습니다."
-        return
-
-    success, message = backend_service.reset_password(token, data["current"], data["new"])
-
-    if success:
-        st.success(f"🔒 {message}")
-        st.session_state.show_password_reset = False
-        st.session_state.password_data = {"current": "", "new": "", "confirm": ""}
-        st.session_state.password_error = ""
-    else:
-        st.session_state.password_error = message
-
-
-def reset_password_form():
-    st.session_state.show_password_reset = False
-    st.session_state.password_data = {"current": "", "new": "", "confirm": ""}
-    st.session_state.password_error = ""
-
-
-def toggle_delete_confirm(value):
-    st.session_state.show_delete_confirm = value
-
-
-def handle_account_delete():
-    token = _get_auth_token()
-    if not token:
-        st.error("계정 정보를 찾을 수 없습니다.")
-        st.stop()  # 추가: 오류 발생 시 실행 중단
-        return
-
-    success, message = backend_service.delete_user_account(token)
-    if success:
-        st.success(f"🗑️ {message}")
-        st.session_state.settings_modal_open = False
-        st.session_state["is_logged_in"] = False
-        try:
-            clear_session()
-        except Exception:
-            pass
-        st.session_state["user_info"] = {}
-        st.session_state["profiles"] = []
-        st.session_state["messages"] = [
-            {
-                "id": str(uuid.uuid4()),
-                "role": "assistant",
-                "content": "안녕하세요! 정책 추천 챗봇입니다. 나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.",
-                "timestamp": time.time(),
-            }
-        ]
-        st.rerun()
-    else:
-        st.error(f"🗑️ {message}")
 
 
 def render_settings_modal():
@@ -202,68 +130,3 @@ def render_settings_modal():
         key="switch_updates",
         on_change=lambda: update_notification("updates"),
     )
-
-    st.markdown("---")
-
-    st.markdown("#### 비밀번호 재설정")
-    if not st.session_state.show_password_reset:
-        st.text_input(
-            "비밀번호 변경",
-            key="password_change_input",
-            placeholder="비밀번호 변경",
-            disabled=True,
-        )
-    else:
-        with st.form(key="password_reset_form"):
-            st.text_input("현재 비밀번호 *", type="password", key="current-password")
-            st.text_input("새 비밀번호 *", type="password", key="new-password")
-            st.text_input("새 비밀번호 확인 *", type="password", key="confirm-password")
-            st.session_state.password_data["current"] = st.session_state.get(
-                "current-password", ""
-            )
-            st.session_state.password_data["new"] = st.session_state.get(
-                "new-password", ""
-            )
-            st.session_state.password_data["confirm"] = st.session_state.get(
-                "confirm-password", ""
-            )
-
-            if st.session_state.get("password_error"):
-                st.error(f"⚠️ {st.session_state.password_error}")
-
-            col_submit, col_cancel = st.columns(2)
-            with col_submit:
-                if st.form_submit_button("변경하기", use_container_width=True):
-                    handle_password_reset()
-            with col_cancel:
-                if st.form_submit_button(
-                    "취소", on_click=reset_password_form, use_container_width=True
-                ):
-                    pass
-
-    st.markdown("---")
-
-    st.markdown("#### 회원 탈퇴")
-    if not st.session_state.show_delete_confirm:
-        if st.button(
-            "회원 탈퇴",
-            key="delete_button_initial",
-            on_click=toggle_delete_confirm,
-            args=(True,),
-            use_container_width=True,
-            type="primary",
-        ):
-            pass
-    else:
-        st.warning(
-            "⚠️ 회원 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다. 정말로 탈퇴하시겠습니까?"
-        )
-        col_delete, col_cancel_delete = st.columns(2)
-        with col_delete:
-            if st.button("탈퇴하기", key="delete_button_confirm", use_container_width=True):
-                handle_account_delete()
-
-        with col_cancel_delete:
-            if st.button("취소", key="delete_button_cancel", use_container_width=True):
-                toggle_delete_confirm(False)
-                st.rerun()

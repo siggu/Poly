@@ -43,6 +43,12 @@ BASIC_LIVELIHOOD_MAPPING = {
     "주거": "HOUSING",
     "교육": "EDUCATION",
 }
+# 11.17 저녁에 추가
+DISABILITY_GRADE_MAP_DB_TO_FE = {
+    0: "미등록",
+    1: "심한 장애",
+    2: "심하지 않은 장애",
+}
 
 
 # ==============================================================================
@@ -260,11 +266,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
                 )
 
                 # 장애등급 (숫자)
-                disability_grade = (
-                    int(user_data.get("disability_grade", 0) or 0)
-                    if user_data.get("disability_grade")
-                    else None
-                )
+                disability_grade = {"미등록": 0, "심한 장애": 1, "심하지 않은 장애": 2}.get(user_data.get("disability_grade"), None)
 
                 # 장기요양 등급 (이미 영문 코드)
                 ltci_grade = user_data.get("ltci_grade", "NONE")
@@ -414,10 +416,8 @@ def _map_profile_row(row: Dict) -> Dict[str, Any]:
         ),
         "healthInsurance": insurance_reverse_map.get(row.get("insurance_type"), "직장"),
         "basicLivelihood": livelihood_reverse_map.get(row.get("basic_benefit_type"), "없음"),
-        "disabilityLevel": (
-            int(row.get("disability_grade"))
-            if row.get("disability_grade") is not None
-            else None
+        "disabilityLevel": DISABILITY_GRADE_MAP_DB_TO_FE.get(
+            row.get("disability_grade"), "미등록"
         ),
         "longTermCare": row.get("ltci_grade"),
         "pregnancyStatus": "임신중" if row.get("pregnant_or_postpartum12m") else "없음",
@@ -528,23 +528,23 @@ def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int
                         user_uuid,
                         profile_data.get("name", "새 프로필"),
                         profile_data.get("birthDate"),
-                        profile_data.get("sex"),
-                        profile_data.get("residency_sgg_code"),
-                        profile_data.get("insurance_type"),
+                        GENDER_MAPPING.get(profile_data.get("gender"), "M"),
+                        profile_data.get("location"),
+                        HEALTH_INSURANCE_MAPPING.get(profile_data.get("healthInsurance"), "EMPLOYED"),
                         (
                             float(profile_data.get("median_income_ratio") or 0)
                             if profile_data.get("median_income_ratio")
                             else None
                         ),
-                        profile_data.get("basic_benefit_type"),
+                        BASIC_LIVELIHOOD_MAPPING.get(profile_data.get("basicLivelihood"), "NONE"),
                         (
-                            int(profile_data.get("disability_grade") or 0)
-                            if profile_data.get("disability_grade")
-                            else None
+                            {"미등록": 0, "심한 장애": 1, "심하지 않은 장애": 2}.get(profile_data.get("disabilityLevel"), None)
                         ),
-                        profile_data.get("ltci_grade"),
-                        profile_data.get("pregnant_or_postpartum12m")
-                        == "임신 또는 출산 후 12개월 이내",
+                        profile_data.get("longTermCare"),
+                        (
+                            profile_data.get("pregnancyStatus") == "임신중"
+                            or profile_data.get("pregnancyStatus") == "출산후12개월이내"
+                        ),
                     ),
                 )
 
@@ -570,14 +570,14 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             column_map = {
                 "name": "name",
                 "birthDate": "birth_date",
-                "sex": "sex",
-                "residency_sgg_code": "residency_sgg_code",
-                "median_income_ratio": "median_income_ratio",
-                "insurance_type": "insurance_type",
-                "basic_benefit_type": "basic_benefit_type",
-                "disability_grade": "disability_grade",
-                "ltci_grade": "ltci_grade",
-                "pregnant_or_postpartum12m": "pregnant_or_postpartum12m",
+                "gender": "sex", # Frontend 'gender' maps to DB 'sex'
+                "location": "residency_sgg_code", # Frontend 'location' maps to DB 'residency_sgg_code'
+                "healthInsurance": "insurance_type", # Frontend 'healthInsurance' maps to DB 'insurance_type'
+                "incomeLevel": "median_income_ratio", # Frontend 'incomeLevel' maps to DB 'median_income_ratio'
+                "basicLivelihood": "basic_benefit_type", # Frontend 'basicLivelihood' maps to DB 'basic_benefit_type'
+                "disabilityLevel": "disability_grade", # Frontend 'disabilityLevel' maps to DB 'disability_grade'
+                "longTermCare": "ltci_grade", # Frontend 'longTermCare' maps to DB 'ltci_grade'
+                "pregnancyStatus": "pregnant_or_postpartum12m", # Frontend 'pregnancyStatus' maps to DB 'pregnant_or_postpartum12m'
             }
 
             for frontend_key, db_column in column_map.items():
@@ -585,12 +585,23 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
                     value = profile_data[frontend_key]
 
                     # 타입 변환
-                    if frontend_key == "median_income_ratio":
+                    if frontend_key == "gender":
+                        value = GENDER_MAPPING.get(value, "M")
+                    elif frontend_key == "healthInsurance":
+                        value = HEALTH_INSURANCE_MAPPING.get(value, "EMPLOYED")
+                    elif frontend_key == "basicLivelihood":
+                        value = BASIC_LIVELIHOOD_MAPPING.get(value, "NONE")
+                    elif frontend_key == "disabilityLevel":
+                        value = {"미등록": 0, "심한 장애": 1, "심하지 않은 장애": 2}.get(value, None)
+                    elif frontend_key == "longTermCare": # No change needed, already matches
+                        pass
+                    elif frontend_key == "pregnancyStatus":
+                        value = (value == "임신중" or value == "출산후12개월이내")
+                    elif frontend_key == "incomeLevel":
                         value = float(value) if value is not None else None
-                    elif frontend_key == "disability_grade":
-                        value = int(value) if value is not None else None
-                    elif frontend_key == "pregnant_or_postpartum12m":
-                        value = value == "임신 또는 출산 후 12개월 이내"
+                    elif frontend_key == "birthDate":
+                        # Assuming birthDate is already in 'YYYY-MM-DD' string format from frontend
+                        pass
 
                     set_clauses.append(f"{db_column} = %s")
                     values.append(value)

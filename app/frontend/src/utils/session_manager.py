@@ -75,33 +75,6 @@ def load_session() -> Optional[Dict[str, Any]]:
         return None
 
 
-def update_login_status(is_logged_in: bool = False):
-    """
-    로그인 상태만 업데이트
-
-    Args:
-        is_logged_in: 로그인 상태 (False면 로그아웃 처리)
-    """
-    try:
-        session_data = load_session() or {}
-        session_data["is_logged_in"] = is_logged_in
-
-        # ✅ 로그아웃 시 토큰도 삭제
-        if not is_logged_in:
-            session_data["auth_token"] = None
-            logger.info("🔓 로그아웃 처리 - 토큰 삭제됨")
-
-        session_file = get_session_file_path()
-        with open(session_file, "w", encoding="utf-8") as f:
-            json.dump(session_data, f, ensure_ascii=False, indent=2, default=str)
-
-        logger.info(f"✅ 로그인 상태 업데이트 완료: {is_logged_in}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ 로그인 상태 업데이트 실패: {e}")
-        return False
-
-
 def clear_session():
     """세션 파일 삭제"""
     session_file = get_session_file_path()

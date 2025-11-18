@@ -16,6 +16,11 @@ SUGGESTED_QUESTIONS = [
 ]
 
 
+def _get_auth_token():
+    """세션에서 인증 토큰을 가져옵니다."""
+    return st.session_state.get("auth_token")
+
+
 def _extract_policies_from_text(text: str):
     """
     이 함수는 더 이상 사용되지 않습니다. 항상 None을 반환합니다.
@@ -87,6 +92,10 @@ def render_chatbot_main():
     load_css("components/chat_messages.css")
     load_css("components/chat_ui.css")
 
+    # 대화 저장 확인 상태 초기화
+    if "save_chat_confirmation" not in st.session_state:
+        st.session_state.save_chat_confirmation = False
+
     if st.session_state.get("clear_user_input", False):
         st.session_state["user_input"] = ""
         st.session_state["clear_user_input"] = False
@@ -147,3 +156,55 @@ def render_chatbot_main():
             handle_send_message(user_input)
 
     render_template("components/disclaimer.html")
+
+    # --- 대화 저장 및 초기화 UI ---
+    st.markdown("---")
+    if st.session_state.save_chat_confirmation:
+        st.warning("현재 대화 내용을 저장하시겠습니까? 저장하지 않은 대화는 사라집니다.")
+        col1, col2, col3 = st.columns([1.5, 1.5, 1])
+        with col1:
+            if st.button("💾 저장하고 초기화", use_container_width=True):
+                token = _get_auth_token()
+                if token:
+                    # TODO: 백엔드에 대화 저장 API 호출 (backend_service 사용)
+                    # success, msg = backend.save_chat_history(token, st.session_state.messages)
+                    # if success:
+                    #     st.toast("대화 내용이 저장되었습니다.")
+                    # else:
+                    #     st.error(f"저장 실패: {msg}")
+                    st.toast("대화 내용 저장 기능은 구현 예정입니다.")
+                st.session_state.messages = []
+                st.session_state.save_chat_confirmation = False
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 저장하지 않고 초기화", use_container_width=True):
+                st.session_state.messages = []
+                st.session_state.save_chat_confirmation = False
+                st.rerun()
+        with col3:
+            if st.button("취소", use_container_width=True):
+                st.session_state.save_chat_confirmation = False
+                st.rerun()
+    else:
+        col_save, col_reset = st.columns(2)
+        with col_save:
+            if st.button("💾 대화 저장", use_container_width=True):
+                token = _get_auth_token()
+                if token:
+                    # TODO: 백엔드에 대화 저장 API 호출 (backend_service 사용)
+                    # success, msg = backend.save_chat_history(token, st.session_state.messages)
+                    # if success:
+                    #     st.toast("대화 내용이 저장되었습니다.")
+                    # else:
+                    #     st.error(f"저장 실패: {msg}")
+                    st.toast("대화 내용 저장 기능은 구현 예정입니다.")
+                else:
+                    st.warning("로그인이 필요합니다.")
+
+        with col_reset:
+            if st.button("🔄 초기화", use_container_width=True):
+                if len(st.session_state.get("messages", [])) > 1:
+                    st.session_state.save_chat_confirmation = True
+                    st.rerun()
+                else:
+                    st.toast("초기화할 대화 내용이 없습니다.")

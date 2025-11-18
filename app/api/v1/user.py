@@ -65,8 +65,8 @@ def get_current_active_user(
 
     # user_info 딕셔너리에 'id' 키가 사용자 UUID를 담도록 보장합니다.
     # get_user_and_profile_by_id가 반환하는 딕셔너리의 'user_uuid' 키를 'id'로 매핑합니다.
-    if user_info and 'user_uuid' in user_info:
-        user_info['id'] = user_info['user_uuid']
+    if user_info and "user_uuid" in user_info:
+        user_info["id"] = user_info["user_uuid"]
     return user_info
 
 
@@ -121,17 +121,35 @@ async def login_user(user_data: UserLogin, db: Any = Depends(get_db)):
 # ===============================================
 
 
+# 11.18 수정 - 프로필 관련 API 엔드포인트에 필드명 변환 적용
+# ✅ 프로필 조회 - DB 데이터를 프론트엔드 형식으로 변환
 @router.get("/profile", summary="현재 사용자의 메인 프로필 조회")
 async def get_user_profile(current_user: dict = Depends(get_current_active_user)):
     """
     인증된 사용자의 메인 프로필 정보를 조회합니다.
-    ✅ main_profile_id를 포함하여 반환합니다.
+    ✅ DB 필드명 → 프론트엔드 필드명 변환
     """
-    # get_current_active_user가 반환하는 딕셔너리를 그대로 반환합니다.
-    # 이 딕셔너리는 이미 필요한 모든 정보를 포함하고 있습니다.
-    return current_user
+    user_uuid = current_user.get("id")
+
+    # DB에서 프로필 조회
+    ok, profile_data = db_ops.get_user_and_profile_by_id(user_uuid)
+
+    if not ok or not profile_data:
+        raise HTTPException(status_code=404, detail="프로필을 찾을 수 없습니다.")
+
+    # ✅ DB 필드명 → 프론트엔드 필드명 변환
+    frontend_profile = UserProfile.from_db_dict(profile_data)
+
+    return {
+        "id": current_user.get("id"),
+        "username": current_user.get("username"),
+        "main_profile_id": current_user.get("main_profile_id"),
+        "profile": frontend_profile.model_dump(),
+    }
 
 
+# 11.18 수정
+# ✅ 프로필 수정 - 필드명 변환 적용
 @router.patch(
     "/profile/{profile_id}", response_model=SuccessResponse, summary="특정 프로필 수정"
 )
@@ -140,39 +158,54 @@ async def update_user_profile(
     update_data: UserProfile,
     current_user: dict = Depends(get_current_active_user),
 ):
-    """특정 프로필 정보 수정"""
+    """특정 프로필 정보 수정 (필드명 변환 적용)"""
     if not profile_id:
         raise HTTPException(status_code=400, detail="유효하지 않은 프로필 ID입니다.")
 
-    update_dict = update_data.model_dump(exclude_unset=True)
+    # ✅ 프론트엔드 필드명 → DB 필드명 변환
+    db_data = update_data.to_db_dict()
 
-    if not update_dict:
+    # None 값 제거 (업데이트하지 않을 필드)
+    db_data = {k: v for k, v in db_data.items() if v is not None}
+
+    if not db_data:
         return SuccessResponse(message="수정할 내용이 없습니다.")
 
-    if db_ops.update_profile(profile_id, update_dict):
+    if db_ops.update_profile(profile_id, db_data):
         return SuccessResponse(message="프로필이 성공적으로 수정되었습니다.")
     else:
         raise HTTPException(status_code=500, detail="프로필 수정에 실패했습니다.")
 
 
-@router.get(
-    "/profiles", response_model=List[UserProfileWithId], summary="모든 프로필 조회"
-)
-async def get_all_user_profiles(current_user: dict = Depends(get_current_active_user)):
-    """인증된 사용자의 모든 프로필 목록 조회"""
-    user_uuid = current_user.get("id")  # ✅ "user_uuid" → "id"
+# 11.18수정
+# ✅ 모든 프로필 조회 - DB 데이터를 프론트엔드 형식으로 변환
+@router.get("/profiles", summary="사용자의 모든 프로필 조회")
+async def get_all_user_profiles(
+    current_user: dict = Depends(get_current_active_user),
+):
+    """사용자의 모든 프로필 조회 (필드명 변환 적용)"""
+    user_uuid = current_user.get("id")
 
     if not user_uuid:
         raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다.")
 
-    ok, profiles = db_ops.get_all_profiles_by_user_id(user_uuid)
+    ok, profiles_list = db_ops.get_all_profiles_by_user_id(user_uuid)
+
     if not ok:
-        raise HTTPException(
-            status_code=500, detail="프로필 목록을 가져오는 데 실패했습니다."
+        raise HTTPException(status_code=500, detail="프로필 조회에 실패했습니다.")
+
+    # ✅ 각 프로필의 DB 필드명 → 프론트엔드 필드명 변환
+    frontend_profiles = []
+    for profile in profiles_list:
+        frontend_profile = UserProfile.from_db_dict(profile)
+        frontend_profiles.append(
+            {"id": profile.get("id"), **frontend_profile.model_dump()}
         )
-    return profiles
+
+    return frontend_profiles
 
 
+# ✅ 프로필 추가 - 필드명 변환 적용
 @router.post(
     "/profile",
     response_model=UserProfileWithId,
@@ -183,36 +216,47 @@ async def add_new_profile(
     profile_data: UserProfile,
     current_user: dict = Depends(get_current_active_user),
 ):
-    """새 프로필 추가"""
-    user_uuid = current_user.get("id")  # ✅ "user_uuid" → "id"
+    """새 프로필 추가 (필드명 변환 적용)"""
+    user_uuid = current_user.get("id")
 
     if not user_uuid:
         raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다.")
 
-    ok, new_profile_id = db_ops.add_profile(user_uuid, profile_data.model_dump())
+    # ✅ 프론트엔드 필드명 → DB 필드명 변환
+    db_data = profile_data.to_db_dict()
+
+    ok, new_profile_id = db_ops.add_profile(user_uuid, db_data)
     if not ok:
         raise HTTPException(status_code=500, detail="프로필 추가에 실패했습니다.")
 
     return UserProfileWithId(id=new_profile_id, **profile_data.model_dump())
 
 
+# ✅ 프로필 삭제 11.18수정
 @router.delete(
-    "/profile/{profile_id}", response_model=SuccessResponse, summary="특정 프로필 삭제"
+    "/profile/{profile_id}",
+    response_model=SuccessResponse,
+    summary="특정 프로필 삭제",
 )
-async def delete_user_profile(
+async def delete_profile(
     profile_id: int,
     current_user: dict = Depends(get_current_active_user),
 ):
     """특정 프로필 삭제"""
+    user_uuid = current_user.get("id")
+
     if not profile_id:
         raise HTTPException(status_code=400, detail="유효하지 않은 프로필 ID입니다.")
 
-    if db_ops.delete_profile_by_id(profile_id):
-        return SuccessResponse(message="프로필이 성공적으로 삭제되었습니다.")
-    else:
-        raise HTTPException(status_code=500, detail="프로필 삭제에 실패했습니다.")
+    ok, message = db_ops.delete_profile_by_id(profile_id, user_uuid)
+
+    if not ok:
+        raise HTTPException(status_code=500, detail=message)
+
+    return SuccessResponse(message=message)
 
 
+# ✅ 메인 프로필 설정 11.18 수정
 @router.put(
     "/profile/main/{profile_id}",
     response_model=SuccessResponse,
@@ -223,34 +267,37 @@ async def set_main_profile(
     current_user: dict = Depends(get_current_active_user),
 ):
     """메인 프로필 변경"""
+    user_uuid = current_user.get("id")
+
     if not profile_id:
         raise HTTPException(status_code=400, detail="유효하지 않은 프로필 ID입니다.")
 
-    user_uuid = current_user.get("id")  # ✅ "user_uuid" → "id"
+    ok, message = db_ops.update_user_main_profile_id(user_uuid, profile_id)
 
-    if not user_uuid:
-        raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다.")
-
-    ok, msg = db_ops.update_user_main_profile_id(user_uuid, profile_id)
     if not ok:
-        raise HTTPException(status_code=500, detail=msg)
-    return SuccessResponse(message=msg)
+        raise HTTPException(status_code=500, detail=message)
+
+    return SuccessResponse(message=message)
 
 
+# ✅ 회원 탈퇴 11.18 수정
 @router.delete(
-    "/delete", response_model=SuccessResponse, summary="현재 사용자 계정 삭제"
+    "/delete",
+    response_model=SuccessResponse,
+    summary="회원 탈퇴",
 )
 async def delete_user_account(
     current_user: dict = Depends(get_current_active_user),
 ):
-    """사용자 계정 삭제"""
-    user_uuid = current_user.get("id")  # ✅ "user_uuid" → "id"
+    """회원 탈퇴 (모든 프로필 및 데이터 삭제)"""
+    user_uuid = current_user.get("id")
 
     if not user_uuid:
         raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다.")
 
     ok, message = db_ops.delete_user_account(user_uuid)
+
     if not ok:
         raise HTTPException(status_code=500, detail=message)
+
     return SuccessResponse(message=message)
-        
