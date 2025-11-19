@@ -1,0 +1,22 @@
+{
+  "user_info": {
+    "user_uuid": "f2496dfe-cbae-4831-87c3-5bf17fffce26",
+    "userId": "createprofile123",
+    "main_profile_id": 89,
+    "created_at": "2025-11-18T15:23:17.455163+09:00",
+    "updated_at": "2025-11-18T15:23:17.455163+09:00",
+    "id": 89,
+    "name": "테스트",
+    "birth_date": "1990-01-19",
+    "sex": "M",
+    "residency_sgg_code": "경기도 의정부시",
+    "median_income_ratio": 376.0,
+    "insurance_type": "DEPENDENT",
+    "basic_benefit_type": "MEDICAL",
+    "disability_grade": null,
+    "ltci_grade": "G4",
+    "pregnant_or_postpartum12m": true
+  },
+  "auth_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjcmVhdGVwcm9maWxlMTIzIiwiZXhwIjoxNzYzNTQ1MDQ4fQ.jf-xDKvbdzi2lifOaxvFVDw7G7XP9EzfE45mS-h1RXQ",
+  "is_logged_in": true
+}

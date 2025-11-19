@@ -19,7 +19,7 @@ load_dotenv()
 
 # Gemini API 설정
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gemini-2.0-flash")
+ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gemini-1.5-flash")
 
 # ───────────────────────────────────────────────────────────
 # 시스템 프롬프트

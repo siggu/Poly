@@ -54,3 +54,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 conda install -c conda-forge faiss-gpu=1.8.0 cudatoolkit=11.8
 pip install beatyfulsoup4
 
+수정 사항(11.19)
+pip uninstall google-generativeai
+ pip install -r requirements.txt  

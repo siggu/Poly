@@ -40,62 +40,45 @@ class BackendService:
         except requests.exceptions.RequestException as e:
             return {"status": "error", "message": f"백엔드 연결 실패: {e}"}
 
-    def get_llm_response(
+    def send_chat_message(
         self,
-        history_messages: List[Dict[str, Any]],
-        user_message: str,
-        active_profile: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str],
+        token: str,  # 인증 토큰 추가
+        user_input: str,
+        user_action: str = "none",
     ) -> Dict[str, Any]:
         """
-        LLM 응답을 요청합니다 (일반 비스트리밍 요청).
-        FastAPI의 /api/v1/chat/generate 엔드포인트를 호출합니다.
+        새로운 통합 /api/chat 엔드포인트로 채팅 메시지를 전송합니다.
+        이제 인증 토큰이 필요합니다.
+        스트리밍을 사용하지 않고 전체 응답을 한 번에 받습니다.
         """
-        url = f"{FASTAPI_BASE_URL}/api/v1/chat/generate"
+        url = f"{FASTAPI_BASE_URL}/api/chat"
         payload = {
-            "history_messages": history_messages,
-            "user_message": user_message,
-            "active_profile": active_profile,
+            "session_id": session_id,
+            "user_input": user_input,
+            "user_action": user_action,
+            "client_meta": {
+                "ui_lang": "ko",
+                "app_version": "streamlit-v1"
+            }
         }
+        headers = {"Authorization": f"Bearer {token}"}
 
         try:
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
             response.raise_for_status()
-            return response.json()
+            return response.json()  # ChatResponse 모델에 맞는 dict 반환
         except requests.exceptions.RequestException as e:
-            error_msg = f"LLM 응답 요청 중 오류 발생: {e}"
+            error_msg = f"채팅 API 요청 중 오류 발생: {e}"
             print(error_msg)
-            return {"content": f"오류: {error_msg}"}
-
-    def get_llm_response_stream(
-        self,
-        history_messages: List[Dict[str, Any]],
-        user_message: str,
-        active_profile: Optional[Dict[str, Any]] = None,
-    ) -> Iterator[str]:
-        """
-        LLM 응답 스트리밍을 요청합니다.
-        FastAPI의 /api/v1/chat/stream 엔드포인트를 호출합니다.
-        """
-        url = f"{FASTAPI_BASE_URL}/api/v1/chat/stream"
-        payload = {
-            "history_messages": history_messages,
-            "user_message": user_message,
-            "active_profile": active_profile,
-        }
-
-        try:
-            # stream=True 설정으로 응답이 들어올 때마다 청크 단위로 처리
-            with requests.post(url, json=payload, stream=True, timeout=60) as response:
-                response.raise_for_status()
-                for chunk in response.iter_content(
-                    chunk_size=None, decode_unicode=True
-                ):
-                    if chunk:
-                        yield chunk
-        except requests.exceptions.RequestException as e:
-            error_msg = f"LLM 스트림 요청 중 오류 발생: {e}"
-            print(error_msg)
-            yield f"\n\n오류: {error_msg}"
+            # server_test.py의 ChatResponse와 유사한 오류 구조 반환
+            return {
+                "session_id": session_id,
+                "answer": f"오류: {error_msg}",
+                "session_ended": False,
+                "save_result": None,
+                "debug": {},
+            }
 
     # ==============================================================================
     # 사용자 인증 및 프로필 API 호출
@@ -135,6 +118,7 @@ class BackendService:
     def login_user(self, username: str, password: str) -> Tuple[bool, Any]:
         """로그인 API를 호출하고 성공 시 토큰을 반환합니다."""
         url = f"{FASTAPI_BASE_URL}/api/v1/user/login"
+        print(f"DEBUG: Attempting to log in to: {url}") # 디버그용 출력 추가
         payload = {"username": username, "password": password}
         try:
             response = requests.post(url, json=payload, timeout=10)
