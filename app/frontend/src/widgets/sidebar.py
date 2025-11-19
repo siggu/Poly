@@ -29,53 +29,6 @@ def _get_profile_id(profile):
     return int(profile_id)
 
 
-def _get_user_main_profile_id() -> Optional[int]:
-    """세션 상태에서 사용자의 main_profile_id를 조회합니다."""
-    user_info = st.session_state.get("user_info", {})
-    if isinstance(user_info, dict):
-        main_id = user_info.get("main_profile_id")
-        if main_id is not None:
-            return int(main_id)
-    return None
-
-
-def _refresh_profiles_from_db():
-    """DB에서 최신 프로필 목록을 가져와 세션 상태를 업데이트합니다."""
-    token = _get_auth_token()
-    if not token:
-        return False
-
-    ok, profiles_list = backend_service.get_all_profiles(token)
-
-    # 401 오류 시 자동 로그아웃 처리 ⭐
-    if not ok:
-        error_msg = str(profiles_list).lower()
-        if "401" in error_msg or "unauthorized" in error_msg:
-            # 세션 정보 초기화
-            st.session_state["is_logged_in"] = False
-            st.session_state["auth_token"] = None
-            st.session_state["profiles"] = []
-            st.session_state["user_info"] = {}
-            st.warning("세션이 만료되었습니다. 다시 로그인해주세요.")
-        return False
-
-    if not profiles_list:
-        st.session_state.profiles = []
-        return False
-
-    main_profile_id = _get_user_main_profile_id()
-
-    for p in profiles_list:
-        p_id = _get_profile_id(p)
-        if p_id is not None:
-            p["isActive"] = p_id == main_profile_id
-        else:
-            p["isActive"] = False
-
-    st.session_state.profiles = profiles_list
-    return True
-
-
 def calculate_age(birth_date):
     """생년월일로부터 나이를 계산합니다."""
     if isinstance(birth_date, date):
@@ -110,21 +63,28 @@ def handle_edit_profile_click(profile_id: int):
     st.rerun()
 
 
+# --- ⭐ 프로필 전환 리팩토링: st.rerun()을 사용하지 않는 콜백 함수로 변경 ---
 def handle_profile_select(profile_id: int):
-    """프로필 선택 버튼 클릭 시 활성 프로필 변경"""
+    """
+    프로필 선택 콜백 함수.
+    백엔드에 주 프로필 변경을 요청하고, 성공 시 세션 상태를 업데이트합니다.
+    버튼의 on_click에서 호출되므로 st.rerun()이 필요 없습니다.
+    """
     if profile_id is None:
-        st.error("프로필 ID가 제공되지 않았습니다.")
         return
 
     token = _get_auth_token()
     if token:
         success, message = backend_service.set_main_profile(token, profile_id)
         if success:
-            st.success("활성 프로필이 변경되었습니다.")
-            _refresh_profiles_from_db()
-            st.rerun()
+            # 세션 상태의 current_profile_id를 직접 업데이트
+            st.session_state.current_profile_id = profile_id
+            st.toast("✅ 프로필이 전환되었습니다.")
         else:
             st.error(f"활성 프로필 변경 실패: {message}")
+
+
+# ---
 
 
 def handle_profile_delete(profile_id: int):
@@ -143,25 +103,35 @@ def handle_profile_delete(profile_id: int):
         if success:
             st.success("프로필이 삭제되었습니다.")
 
-            # 삭제된 프로필이 활성 프로필인지 확인
-            is_active_deleted = any(
-                _get_profile_id(p) == profile_id and p.get("isActive")
-                for p in st.session_state.profiles
-            )
+            # --- ⭐ 프로필 전환 리팩토링: 삭제 후 로직 변경 ---
+            # 삭제된 프로필이 현재 활성 프로필인지 확인
+            is_active_deleted = st.session_state.current_profile_id == profile_id
 
-            # 프로필 목록에서 제거
+            # 로컬 프로필 목록에서 즉시 제거
             st.session_state.profiles = [
                 p for p in st.session_state.profiles if _get_profile_id(p) != profile_id
             ]
 
-            # 활성 프로필이 삭제된 경우 첫 번째 프로필을 활성화
+            # 활성 프로필이 삭제되었고, 남은 프로필이 있다면
             if is_active_deleted and st.session_state.profiles:
-                new_active_profile_id = _get_profile_id(st.session_state.profiles[0])
-                if new_active_profile_id is not None:
-                    backend_service.set_main_profile(token, new_active_profile_id)
+                new_active_profile = st.session_state.profiles[0]
+                new_active_profile_id = _get_profile_id(new_active_profile)
 
-            _refresh_profiles_from_db()
-            st.rerun()
+                if new_active_profile_id is not None:
+                    # 백엔드에 새 활성 프로필 설정 요청
+                    ok, _ = backend_service.set_main_profile(
+                        token, new_active_profile_id
+                    )
+                    if ok:
+                        # 세션 상태 업데이트
+                        st.session_state.current_profile_id = new_active_profile_id
+                    else:
+                        st.error("새 활성 프로필 설정에 실패했습니다.")
+            # 남은 프로필이 없다면
+            elif not st.session_state.profiles:
+                st.session_state.current_profile_id = None
+            # ---
+            st.rerun()  # 삭제는 UI 구조가 바뀌므로 rerun 필요
         else:
             st.error(f"프로필 삭제 실패: {message}")
 
@@ -212,19 +182,6 @@ def render_sidebar():
                 handle_settings_click()
             return  # 여기서 종료 ⭐
 
-        # 프로필 목록 새로고침
-        if not st.session_state.get("profiles"):
-            success = _refresh_profiles_from_db()
-            if not success:
-                st.error("프로필을 불러오는데 실패했습니다.")
-                st.caption("로그인 상태를 확인해주세요.")
-                st.markdown("---")
-                if st.button(
-                    "⚙️ 설정", key="sidebar_settings_load_fail", use_container_width=True
-                ):
-                    handle_settings_click()
-                return  # 여기서 종료 ⭐
-
         # 프로필 추가 버튼
         if st.button(
             "➕ 프로필 추가", key="sidebar_add_profile", use_container_width=True
@@ -233,9 +190,15 @@ def render_sidebar():
 
         st.markdown("")
 
+        # --- ⭐ 프로필 전환 리팩토링: `current_profile_id`를 기준으로 활성 프로필 찾기 ---
         # 활성 프로필 표시
         active_profile = next(
-            (p for p in st.session_state.profiles if p.get("isActive", False)), None
+            (
+                p
+                for p in st.session_state.profiles
+                if _get_profile_id(p) == st.session_state.get("current_profile_id")
+            ),
+            None,
         )
 
         if active_profile:
@@ -275,13 +238,19 @@ def render_sidebar():
         if not st.session_state.profiles:
             st.caption("등록된 프로필이 없습니다.")
         else:
-            for profile in st.session_state.profiles:
+            # --- ⭐ 프로필 전환 리팩토링: `current_profile_id`와 일치하지 않는 프로필만 표시 ---
+            other_profiles = [
+                p
+                for p in st.session_state.profiles
+                if _get_profile_id(p) != st.session_state.get("current_profile_id")
+            ]
+
+            if not other_profiles and active_profile:
+                st.caption("다른 프로필이 없습니다.")
+
+            for profile in other_profiles:
                 profile_id = _get_profile_id(profile)
                 if profile_id is None:
-                    continue
-
-                # 활성 프로필은 위에 이미 표시했으므로 스킵
-                if profile.get("isActive", False):
                     continue
 
                 with st.container():
@@ -293,12 +262,15 @@ def render_sidebar():
                         st.write(f"**{name}** ({location})")
 
                     with cols[1]:
-                        if st.button(
+                        # --- ⭐ 프로필 전환 리팩토링: on_click과 args 사용 ---
+                        st.button(
                             "선택",
                             key=f"sidebar_select_{profile_id}",
+                            on_click=handle_profile_select,
+                            args=(profile_id,),
                             use_container_width=True,
-                        ):
-                            handle_profile_select(profile_id)
+                        )
+                        # ---
 
                     with cols[2]:
                         if st.button(
