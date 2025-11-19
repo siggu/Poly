@@ -62,6 +62,11 @@ if "editingData" not in st.session_state:
 if "search_query" not in st.session_state:
     st.session_state.search_query = ""
 
+# --- ⭐ 프로필 전환 리팩토링: 표준 세션 키 초기화 ---
+if "current_profile_id" not in st.session_state:
+    st.session_state.current_profile_id = None
+# ---
+
 if "sidebar_search_input" not in st.session_state:
     st.session_state.sidebar_search_input = ""
 
@@ -140,9 +145,9 @@ SUGGESTED_QUESTIONS = [
 ]
 
 
-# 11.17 수정: 모든 프로필 로드 함수 수정
+# --- ⭐ 프로필 전환 리팩토링: `current_profile_id` 기준으로 로드 ---
 def load_user_profiles_from_backend(token: str) -> bool:
-    """백엔드에서 사용자 정보와 모든 프로필을 로드합니다."""
+    """백엔드에서 사용자 정보와 모든 프로필을 로드하고 `current_profile_id`를 설정합니다."""
     import logging
 
     logger = logging.getLogger(__name__)
@@ -153,40 +158,43 @@ def load_user_profiles_from_backend(token: str) -> bool:
         if not ok:
             logger.error(f"❌ 사용자 정보 조회 실패: {user_info}")
             return False
-
         st.session_state["user_info"] = user_info
-        logger.info(f"✅ 사용자 정보 로드 완료: {user_info.get('id')} ({user_info.get('username')})")
-
-        # 디버깅용 추가
-        logger.info(f"🔍 DEBUG - user_info: {user_info}")
+        logger.info(f"✅ 사용자 정보 로드: {user_info.get('id')}")
 
         # 2. 모든 프로필 목록 조회
         ok_profiles, all_profiles = backend_service.get_all_profiles(token)
-
         if ok_profiles and all_profiles:
-            # main_profile_id로 활성 프로필 표시
-            main_profile_id = user_info.get("main_profile_id")
-            logger.info(f"✅ main_profile_id: {main_profile_id}")
-
-            for profile in all_profiles:
-                if profile:  # None 체크
-                    profile_id = profile.get("id")
-                    profile["isActive"] = profile_id == main_profile_id
-
             st.session_state["profiles"] = all_profiles
             logger.info(f"✅ 프로필 {len(all_profiles)}개 로드 완료")
-            return True
+
+            # 3. `current_profile_id` 설정 (가장 중요)
+            main_profile_id = user_info.get("main_profile_id")
+            if main_profile_id:
+                st.session_state["current_profile_id"] = int(main_profile_id)
+                logger.info(f"✅ 현재 프로필 ID 설정: {main_profile_id}")
+            # 메인 프로필이 지정 안된 경우, 첫번째 프로필을 기본값으로 설정
+            elif all_profiles:
+                first_profile_id = all_profiles[0].get("id")
+                st.session_state["current_profile_id"] = int(first_profile_id)
+                logger.warning(
+                    f"⚠️ main_profile_id가 없어 첫 프로필({first_profile_id})을 활성화합니다."
+                )
+            else:
+                st.session_state["current_profile_id"] = None
         else:
-            # ✅ 수정: 프로필이 없어도 True 반환 (토큰은 유효함)
             logger.warning("⚠️ 프로필이 비어있습니다. 빈 리스트로 초기화합니다.")
             st.session_state["profiles"] = []
-            return True  # ← False에서 True로 변경!
+            st.session_state["current_profile_id"] = None
+        return True
 
     except Exception as e:
         logger.error(f"❌ 프로필 로드 중 오류 발생: {e}")
-        st.error(f"프로필 로드 중 오류 발생: {e}")
         st.session_state["profiles"] = []
-        return True  # ✅ 예외 발생해도 True 반환 (토큰은 유효할 수 있음)
+        st.session_state["current_profile_id"] = None
+        return True
+
+
+# ---
 
 
 # 11.17 수정: 메인 앱 함수

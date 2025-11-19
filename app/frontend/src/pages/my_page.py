@@ -106,41 +106,20 @@ def _get_auth_token() -> Optional[str]:
     return token
 
 
-def _get_user_main_profile_id() -> Optional[int]:
-    """세션 상태에서 사용자의 main_profile_id를 조회합니다."""
-    user_info = st.session_state.get("user_info", {})
-    if isinstance(user_info, dict):
-        main_id = user_info.get("main_profile_id")
-        if main_id is not None:
-            return int(main_id)
-    return None
-
-
 def _refresh_profiles_from_db():
     """DB에서 최신 프로필 목록을 가져와 세션 상태를 업데이트합니다."""
     token = _get_auth_token()
     if not token:
-        return False
+        return
 
     ok, profiles_list = backend_service.get_all_profiles(token)
-    if not ok:
-        return False
+    if ok:
+        st.session_state.profiles = profiles_list if profiles_list else []
+    else:
+        st.error("프로필 목록을 새로고침하는데 실패했습니다.")
 
-    if not profiles_list:
-        st.session_state.profiles = []
-        return False
 
-    main_profile_id = _get_user_main_profile_id()
-
-    for p in profiles_list:
-        p_id = _get_profile_id(p)
-        if p_id is not None:
-            p["isActive"] = p_id == main_profile_id
-        else:
-            p["isActive"] = False
-
-    st.session_state.profiles = profiles_list
-    return True
+# ---
 
 
 # ========== 리다이렉션 처리 함수 ⭐ ==========
@@ -187,33 +166,32 @@ def handle_redirect_actions():
 
 
 # ========== 핸들러 함수 ==========
-def handle_profile_switch(profile_id):
+# --- ⭐ 프로필 전환 리팩토링: `sidebar.py`와 동일한 콜백 함수로 변경 ---
+def handle_profile_switch(profile_id: int):
+    """
+    프로필 선택 콜백 함수.
+    백엔드에 주 프로필 변경을 요청하고, 성공 시 세션 상태를 업데이트합니다.
+    """
     if profile_id is None:
-        st.error("프로필 ID가 제공되지 않았습니다.")
         return
-
-    for p in st.session_state.profiles:
-        p_id = _get_profile_id(p)
-        if p_id is None:
-            continue
-        p["isActive"] = p_id == profile_id
 
     token = _get_auth_token()
     if token:
         success, message = backend_service.set_main_profile(token, profile_id)
         if success:
-            st.success("활성 프로필이 변경되었습니다.")
-            _refresh_profiles_from_db()
+            st.session_state.current_profile_id = profile_id
+            st.toast("✅ 프로필이 전환되었습니다.")
         else:
-            st.error(f"활성 프로필 저장 중 오류 발생: {message}")
-        st.rerun()
+            st.error(f"활성 프로필 변경 실패: {message}")
+
+
+# ---
 
 
 def handle_delete_profile(profile_id):
     if profile_id is None:
         st.error("삭제할 프로필 ID가 없습니다.")
         return
-
     if len(st.session_state.profiles) <= 1:
         st.warning("최소한 하나의 프로필은 남겨야 합니다.")
         return
@@ -224,31 +202,29 @@ def handle_delete_profile(profile_id):
         if success:
             st.success("프로필이 삭제되었습니다.")
 
-            is_active_deleted = any(
-                _get_profile_id(p) == profile_id and p.get("isActive")
-                for p in st.session_state.profiles
-            )
-
+            # --- ⭐ 프로필 전환 리팩토링: `sidebar.py`와 동일한 삭제 로직 ---
+            is_active_deleted = st.session_state.current_profile_id == profile_id
             st.session_state.profiles = [
                 p for p in st.session_state.profiles if _get_profile_id(p) != profile_id
             ]
 
             if is_active_deleted and st.session_state.profiles:
                 new_active_profile_id = _get_profile_id(st.session_state.profiles[0])
-
                 if new_active_profile_id is not None:
-                    success_activate, msg_activate = backend_service.set_main_profile(
+                    ok, _ = backend_service.set_main_profile(
                         token, new_active_profile_id
                     )
-                    if not success_activate:
-                        st.error(f"새 활성 프로필 설정 중 오류 발생: {msg_activate}")
-                else:
-                    st.error("새 활성 프로필 ID를 찾을 수 없습니다.")
-
-            _refresh_profiles_from_db()
+                    if ok:
+                        st.session_state.current_profile_id = new_active_profile_id
+                    else:
+                        st.error("새 활성 프로필을 설정하는 데 실패했습니다.")
+            elif not st.session_state.profiles:
+                st.session_state.current_profile_id = None
+            # ---
+            _refresh_profiles_from_db()  # DB와 동기화
+            st.rerun()  # UI 구조 변경으로 rerun 필요
         else:
             st.error(f"프로필 삭제 중 오류 발생: {message}")
-        st.rerun()
 
 
 def handle_add_profile(new_profile_data):
@@ -410,9 +386,16 @@ def render_my_page_modal():
 
     st.markdown("")
 
+    # --- ⭐ 프로필 전환 리팩토링: `current_profile_id`를 기준으로 활성 프로필 찾기 ---
     active_profile = next(
-        (p for p in st.session_state.profiles if p.get("isActive", False)), None
+        (
+            p
+            for p in st.session_state.profiles
+            if _get_profile_id(p) == st.session_state.get("current_profile_id")
+        ),
+        None,
     )
+    # ---
     if active_profile and is_profile_incomplete(active_profile):
         st.warning("정확한 추천을 위해 프로필 정보를 완성해주세요.")
 
@@ -668,14 +651,24 @@ def render_my_page_modal():
     st.markdown("#### 등록된 프로필")
     for profile in st.session_state.profiles:
         cols = st.columns([6, 1, 1])
+        profile_id = _get_profile_id(profile)
+
+        # 현재 활성 프로필은 '선택' 버튼을 비활성화하고 '활성'으로 표시
+        is_active = profile_id == st.session_state.get("current_profile_id")
+
         with cols[0]:
             st.write(
                 f"- {profile.get('name', '무명')} ({profile.get('location','미입력')})"
             )
         with cols[1]:
-            profile_id = _get_profile_id(profile)
-            if profile_id is not None and st.button("선택", key=f"select_{profile_id}"):
-                handle_profile_switch(profile_id)
+            if profile_id is not None:
+                st.button(
+                    "선택",
+                    key=f"select_{profile_id}",
+                    on_click=handle_profile_switch,
+                    args=(profile_id,),
+                    disabled=is_active,  # 활성 프로필은 비활성화
+                )
         with cols[2]:
             profile_id = _get_profile_id(profile)
             if profile_id is not None and st.button("삭제", key=f"del_{profile_id}"):
