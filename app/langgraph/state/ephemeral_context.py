@@ -7,11 +7,12 @@ LangGraph 전체에서 공유하는 상태(State) 스키마 정의.
 
 - 목적:
   * 세션 동안 인메모리에 유지되는 ephemeral 컨텍스트 구조를 단일 소스로 관리
-  * 각 노드(session_orchestrator, query_router, info_extractor, retrieval_planner,
-    context_assembler, answer_llm, persist_pipeline 등)가 동일한 타입을 바라보도록 함
+  * 각 노드(session_orchestrator, query_router, info_extractor,
+    policy_retriever_node, answer_llm, persist_pipeline 등)가
+    동일한 타입을 바라보도록 함
 
 - 특징:
-  * messages / rag_snippets는 Annotated[..., operator.add] 로 append-only reducer 설정
+  * messages 는 Annotated[..., operator.add] 로 append-only reducer 설정
   * DB에 영구 저장되는 것은 persist_pipeline에서만 처리하고,
     여기 State는 "그래프 실행 중" 관리를 담당
 """
@@ -60,7 +61,11 @@ class RagSnippet(TypedDict, total=False):
     source: str
     title: Optional[str]
     snippet: str
-    score: float
+    score: Optional[float]
+    region: Optional[str]
+    url: Optional[str]
+    requirements: Optional[str]
+    benefits: Optional[str]
 
 
 class PersistResult(TypedDict, total=False):
@@ -83,37 +88,41 @@ class PersistResult(TypedDict, total=False):
 
 class EphemeralContextState(TypedDict, total=False):
     # ── 세션/제어 ───────────────────────────────────────
-    session_id: str                     # 세션 식별자 (thread_id와 1:1 매핑 권장)
-    end_session: bool                   # True면 세션 종료 → persist_pipeline으로 분기
-    started_at: str                     # 세션 시작 시각 (ISO8601)
-    last_activity_at: str               # 마지막 활동 시각 (ISO8601)
-    turn_count: int                     # 세션 내 턴 수
+    session_id: str
+    end_session: bool
+    started_at: str
+    last_activity_at: str
+    turn_count: int
 
     # ── 대화 컨텍스트 ───────────────────────────────────
-    # append-only 리스트: Annotated[..., operator.add]
     messages: Annotated[List[Message], operator.add]
-    rolling_summary: Optional[str]      # 세션 요약(점진적 업데이트)
+    rolling_summary: Optional[str]
+
+    # 🔹 user_context_node가 만드는 파생 컨텍스트 (반드시 유지!)
+    merged_profile: Dict[str, Any]
+    merged_collection: Dict[str, Any]
+    profile_summary_text: Optional[str]
+    history_text: Optional[str]
 
     # ── 사용자 프로필/컬렉션 오버레이 ───────────────────
-    profile_id: Optional[int]           # DB profiles.id (있으면 persist에서 사용)
-    ephemeral_profile: Dict[str, Any]   # 세션 중 추출된 임시 프로필 정보
-    ephemeral_collection: Dict[str, Any]  # 세션 중 추출된 관심사/사례 정보 등
-    merged_profile: Dict[str, Any]  # DB 프로필 + 세션 중 추출된 임시 프로필 정보
-    merged_collection: Dict[str, Any]  # DB 컬렉션 + 세션 중 추출된 임시 컬렉션 정보
+    profile_id: Optional[int]
+    ephemeral_profile: Dict[str, Any]
+    ephemeral_collection: Dict[str, Any]
+
     # ── RAG 관련 ────────────────────────────────────────
-    retrieval: Dict[str, Any]            # retrieval_planner 집계 결과
-    rag_snippets: Annotated[List[RagSnippet], operator.add]
-    retrieval_meta: Dict[str, Any]      # 적용된 필터, 쿼리, k, 소요시간 등
+    retrieval: Dict[str, Any]   # used_rag / rag_snippets / profile_summary_text ...
 
     # ── 입출력 ─────────────────────────────────────────
-    user_input: Optional[str]           # 현재 턴의 사용자 입력
-    answer: Optional[str]               # 현재 턴의 모델 응답 (최종 텍스트)
-    user_action: Optional[str]          # 사용자 액션 Literal["none","save","reset_save","reset_drop"]
+    user_input: Optional[str]
+    answer: Dict[str, Any]
+    user_action: Optional[str]
+
     # ── Router 결정 값 ──────────────────────────────────
-    router: Dict[str, Any]             # category, save_profile, save_collection, use_rag 등
-    # ── 통계/메타 ───────────────────────────────────────
-    model_stats: Dict[str, Any]         # 토큰 사용량, latency 등 집계
-    persist_result: PersistResult       # 마지막 persist_pipeline 실행 결과
+    router: Dict[str, Any]
+
+    # ── Persist 결과 ────────────────────────────────────
+    persist_result: PersistResult
+
 
 
 # alias 편의를 위해 짧은 이름도 제공

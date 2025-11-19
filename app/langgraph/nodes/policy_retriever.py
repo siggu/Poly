@@ -11,7 +11,7 @@ policy_retriever_node.py
      - 현재 질문(user_input)
   2) query_text 임베딩 + pgvector 기반 정책 DB 검색 (RAG)
   3) 프로필 기반 후보 필터링, system 스니펫 추가
-  4) state["retrieval"], state["rag_snippets"], state["context"] 세팅
+  4) state["retrieval"] 세팅
 
 ※ 기존 코드 출처
   - retrieval_planner.py
@@ -159,8 +159,7 @@ def _hybrid_search_documents(
     # 1) region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
     #    → retrieval_planner와 동일한 하드필터링
     # ─────────────────────────────────────────────
-    # region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
-    region_filter = None
+    region_filter: Optional[str] = None
     if merged_profile:
         region_val = merged_profile.get("residency_sgg_code")
         if region_val is None:
@@ -172,7 +171,6 @@ def _hybrid_search_documents(
             print("[policy_retriever_node] region_filter empty or missing")
     else:
         print("[policy_retriever_node] merged_profile is None or empty")
-
 
     # ─────────────────────────────────────────────
     # 2) 임베딩 계산
@@ -319,8 +317,6 @@ def policy_retriever_node(state: State) -> State:
 
     출력/갱신:
       - state["retrieval"]
-      - state["rag_snippets"]
-      - state["context"]
     """
     query_text = state.get("user_input") or ""
     router_info: Dict[str, Any] = state.get("router") or {}
@@ -357,24 +353,12 @@ def policy_retriever_node(state: State) -> State:
                 merged_profile=merged_profile,
                 top_k=RAW_TOP_K,
             )
-
         except Exception as e:  # noqa: E722
             print(f"[policy_retriever_node] document search failed: {e}")
             rag_docs = []
             keywords = extract_keywords(search_text, max_k=8)
     else:
         keywords = extract_keywords(search_text or query_text, max_k=8)
-    # region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
-    region_filter = None
-    if merged_profile:
-        # 우선 residency_sgg_code, 없으면 region_gu를 사용
-        region_val = merged_profile.get("residency_sgg_code")
-        if region_val is None:
-            region_val = merged_profile.get("region_gu")
-        region_filter = _sanitize_region(region_val)
-        if region_filter is None:
-            # 디버깅용 로그 정도로만 사용 (필수 아님)
-            print("[retrieval_planner] region_filter empty or missing")
 
     # --- 프로필 기반 후보 필터 적용 ---
     if merged_profile and rag_docs:
@@ -418,7 +402,6 @@ def policy_retriever_node(state: State) -> State:
             )
             rag_docs = rag_docs[:CONTEXT_TOP_K]
 
-
     # --- 대화 저장 안내 스니펫 추가 ---
     end_requested = bool(state.get("end_session"))
     save_keywords = ("저장", "보관", "기록")
@@ -431,25 +414,13 @@ def policy_retriever_node(state: State) -> State:
             "score": 1.0,
         })
 
-    # --- retrieval / rag_snippets / context 세팅 ---
+    # --- retrieval 세팅 (필요 최소 필드만 유지) ---
     retrieval: Dict[str, Any] = {
         "used_rag": use_rag,
-        "profile_ctx": merged_profile,
-        "collection_ctx": merged_collection,
         "rag_snippets": rag_docs,
-        "keywords": keywords,
-        "debug_search_text": search_text,
         "profile_summary_text": profile_summary_text,
     }
     state["retrieval"] = retrieval
-    state["rag_snippets"] = rag_docs
-
-    # answer_llm이 바로 쓸 수 있는 context 블록
-    state["context"] = {
-        "profile": merged_profile,
-        "collection": merged_collection,
-        "documents": rag_docs,
-        "summary": rolling_summary,
-    }
 
     return state
+

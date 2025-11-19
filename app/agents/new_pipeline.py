@@ -208,9 +208,7 @@ except Exception:
                 "role": "assistant",
                 "content": ans,
                 "created_at": _now_iso(),
-                    "meta": {
-        "no_store": True,  
-    },
+                    "meta": {},
             }],
         }
 
@@ -349,9 +347,9 @@ if __name__ == "__main__":
     out2 = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
-        "user_input": "저는 췌장암이 있고 현재 항암치료중입니다.",
+        "user_input": "저는 췌장암이 있고 현재 항암치료중입니다. 제가 받을 수 있는 혜택이 궁금해요",
         "rolling_summary": out.get("rolling_summary"),
-        "end_session": True,
+        "end_session": False,
     }, config=cfg)
     print("answer2:", out2.get("answer"))
     print("messages_count:", len(out2.get("messages", [])))
