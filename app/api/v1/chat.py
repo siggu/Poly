@@ -78,7 +78,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     """
     # A) 세션 ID 생성/유지
     session_id = req.session_id or f"sess-{uuid4().hex}"
-
+    print(f"🔎 [DEBUG] Received profile_id from Streamlit: {req.profile_id}")
     # B) LangGraph에 넘길 초기 state
     base_end_session = req.user_action in ("reset_save", "reset_drop")
     init_state: Dict[str, Any] = {
@@ -87,8 +87,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
         "user_action": req.user_action,
         "end_session": base_end_session,
         "client_meta": req.client_meta,
+        "profile_id": req.profile_id,  # ⭐ 여기 명시적으로 넣기
     }
-
+    print(f"🔎 [DEBUG] init_state.profile_id = {init_state.get('profile_id')}")
     # C) 세션 기반 체크포인트 사용
     config = {"configurable": {"thread_id": session_id}}
 

@@ -18,7 +18,7 @@ load_dotenv()
 # 로깅 설정
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DB_URL")
 
 if DATABASE_URL:
     # asyncpg 프로토콜 제거 (psycopg2는 postgresql:// 사용)

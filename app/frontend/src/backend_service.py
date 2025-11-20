@@ -7,6 +7,7 @@ DB나 LLM 로직을 직접 처리하지 않고, 모두 HTTP 요청을 통해 Fas
 import os
 from typing import List, Dict, Any, Optional, Iterator, Tuple
 import requests
+import streamlit as st
 
 # FastAPI 서버의 기본 URL (개발 환경 기준)
 # 실제 환경에서는 환경 변수를 통해 관리해야 합니다.
