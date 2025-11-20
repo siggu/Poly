@@ -8,6 +8,8 @@ info_extractor.py
     1) ephemeral_profile (프로필 오버레이)
     2) ephemeral_collection (사례/병력 트리플)
     에 넣어준다.
+  - 동시에, 추출에 사용된 "정보 입력" 부분을 제거한
+    "정책 요청 문장(cleaned_user_input)"을 만들어 다음 노드에서 쓸 수 있게 한다.
 
 동작 규칙:
   - query_router가 남긴 state["router"]를 먼저 본다.
@@ -18,6 +20,7 @@ info_extractor.py
   - 그 외:
     → LLM을 호출해서 구조화된 JSON을 받은 뒤
        ephemeral_profile / ephemeral_collection 에 병합
+       + cleaned_user_input 에 "정보 부분 제거 후 남은 정책 요청 문장"을 넣어준다.
 
 ephemeral_profile 구조 예:
   {
@@ -44,7 +47,7 @@ ephemeral_collection 구조 예:
 
 주의:
   - 여기서는 DB에 직접 쓰지 않는다. (persist_pipeline에서 병합/업서트)
-  - router.use_rag 여부는 여기서는 참고만 하고, 실제 RAG 여부는 retrieval_planner에서 처리.
+  - router.use_rag 여부는 여기서는 참고만 하고, 실제 RAG 여부는 retrieval 쪽에서 처리.
 """
 
 from __future__ import annotations
@@ -52,7 +55,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TypedDict, Literal
+from typing import Any, Dict, List, Optional, TypedDict
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -69,7 +72,10 @@ from app.langgraph.state.ephemeral_context import State, Message
 
 load_dotenv()
 
-INFO_EXTRACTOR_MODEL = os.getenv("INFO_EXTRACTOR_MODEL", os.getenv("ROUTER_MODEL", "gpt-4o-mini"))
+INFO_EXTRACTOR_MODEL = os.getenv(
+    "INFO_EXTRACTOR_MODEL",
+    os.getenv("ROUTER_MODEL", "gpt-4o-mini"),
+)
 
 _client: Optional[OpenAI] = None
 
@@ -89,13 +95,15 @@ def _now_iso() -> str:
 # Pydantic 스키마 (LLM 출력용)
 # ─────────────────────────────────────────────────────────
 
+
 class ProfileField(BaseModel):
     value: Optional[str] = Field(
         description="추출된 값. 숫자(나이, 퍼센트 등)도 문자열로 넣어도 됨. 모르면 null."
     )
     confidence: float = Field(
-        ge=0.0, le=1.0,
-        description="0~1 사이 신뢰도. 확실하면 0.9 이상, 애매하면 0.5 이하."
+        ge=0.0,
+        le=1.0,
+        description="0~1 사이 신뢰도. 확실하면 0.9 이상, 애매하면 0.5 이하.",
     )
 
 
@@ -103,16 +111,17 @@ class ExtractedProfile(BaseModel):
     """
     의료 복지 정책에 자주 쓰이는 핵심 프로필 필드들만 정의.
     """
-    age: Optional[ProfileField] = None                      # 나이(만 나이 기준)
-    birth_year: Optional[ProfileField] = None               # 출생 연도 (예: 1957)
-    sex: Optional[ProfileField] = None                      # '남' / '여'
-    region_gu: Optional[ProfileField] = None                # 거주 구 (예: '강북구', '동작구')
-    median_income_ratio: Optional[ProfileField] = None      # 중위소득 대비 퍼센트 (예: '120')
-    basic_benefit_type: Optional[ProfileField] = None       # 기초생활보장 급여 구분 (생계/의료/주거/교육/기타)
-    nhis_qualification: Optional[ProfileField] = None       # 건강보험 자격 (직장/지역/피부양/의료급여 등)
-    disability_grade: Optional[ProfileField] = None         # 장애 정도/등급 (예: '장애 2급', '중증', '경증')
-    ltci_grade: Optional[ProfileField] = None               # 장기요양등급 (예: '장기요양 2등급')
-    pregnancy_status: Optional[ProfileField] = None         # 임신/출산 상태 (예: '임신 30주차')
+
+    age: Optional[ProfileField] = None  # 나이(만 나이 기준)
+    birth_year: Optional[ProfileField] = None  # 출생 연도 (예: 1957)
+    sex: Optional[ProfileField] = None  # '남' / '여'
+    region_gu: Optional[ProfileField] = None  # 거주 구 (예: '강북구', '동작구')
+    median_income_ratio: Optional[ProfileField] = None  # 중위소득 대비 퍼센트 (예: '120')
+    basic_benefit_type: Optional[ProfileField] = None  # 기초생활보장 급여 구분 (생계/의료/주거/교육/기타)
+    nhis_qualification: Optional[ProfileField] = None  # 건강보험 자격 (직장/지역/피부양/의료급여 등)
+    disability_grade: Optional[ProfileField] = None  # 장애 정도/등급 (0/1/2 매핑용)
+    ltci_grade: Optional[ProfileField] = None  # 장기요양등급 (예: '장기요양 2등급')
+    pregnancy_status: Optional[ProfileField] = None  # 임신/출산 상태 (예: '임신 30주차')
 
 
 class Triple(BaseModel):
@@ -127,15 +136,16 @@ class Triple(BaseModel):
     )
     code_system: Optional[str] = Field(
         default=None,
-        description="코드 체계 (알면). 예: 'KCD7', 'ICD-10', 'NHIS'. 모르면 null."
+        description="코드 체계 (알면). 예: 'KCD7', 'ICD-10', 'NHIS'. 모르면 null.",
     )
     code: Optional[str] = Field(
         default=None,
-        description="코드 값 (알면). 예: 'E11', 'C509'. 모르면 null."
+        description="코드 값 (알면). 예: 'E11', 'C509'. 모르면 null.",
     )
     confidence: float = Field(
-        ge=0.0, le=1.0,
-        description="트리플의 신뢰도 (0~1)."
+        ge=0.0,
+        le=1.0,
+        description="트리플의 신뢰도 (0~1).",
     )
 
 
@@ -146,12 +156,23 @@ class ExtractedCollection(BaseModel):
 class ExtractResult(BaseModel):
     profile: ExtractedProfile
     collection: ExtractedCollection
+    # ★ 새 필드: 정보 추출에 사용된 부분을 제거하고 남은 "정책/질문" 문장
+    residual_query: Optional[str] = Field(
+        default=None,
+        description=(
+            "사용자 발화에서 프로필/트리플 추출에 사용된 정보 부분을 제거하고 "
+            "남은 '정책 요청/질문'만 담은 문장. 남는 게 없으면 빈 문자열 또는 null."
+        ),
+    )
 
 
 class InfoExtractorOutput(TypedDict, total=False):
     ephemeral_profile: Dict[str, Any]
     ephemeral_collection: Dict[str, Any]
-    messages: Any  # StateGraph reducer가 merge
+    # 다음 노드에서 사용할 "정보 제거 후 정책 요청 문장"
+    cleaned_user_input: str
+    # StateGraph reducer가 merge 할 tool 로그
+    messages: Any
 
 
 SYSTEM_PROMPT = """
@@ -159,14 +180,33 @@ SYSTEM_PROMPT = """
 사용자의 발화에서 복지 정책 추천에 유의미한 정보만 뽑아
 지정된 JSON 스키마에 맞추어 응답하라.
 
-- 프로필 정보(profile)는 '상태/속성' (나이, 거주지, 소득수준, 건강보험 자격, 기초생활보장 급여, 장애등급, 장기요양등급, 임신/출산 여부 등)
-- 컬렉션 정보(collection)는 '사례/병력/에피소드' (언제 어떤 진단, 수술, 입원, 치료, 합병증, 투약, 검사 등을 받았는지)
+- 프로필 정보(profile)는 '상태/속성'
+  (나이, 거주지, 소득수준, 건강보험 자격, 기초생활보장 급여, 장애등급, 장기요양등급, 임신/출산 여부 등)
+- 컬렉션 정보(collection)는 '사례/병력/에피소드'
+  (언제 어떤 진단, 수술, 입원, 치료, 합병증, 투약, 검사 등을 받았는지)
+
+또한,
+- 사용자의 한 발화 안에
+  (1) 프로필/병력 같은 "정보 입력" 과
+  (2) "정책/혜택을 물어보는 질문" 이 섞여 있을 수 있다.
+- 이 경우, 프로필/컬렉션에 쓴 정보 부분을 원문에서 제거하고,
+  남은 "정책/질문" 부분만 residual_query 에 넣어라.
+
+예시:
+- 입력: "저는 중위소득 50%고, 임신중인데 받을 수 있는 혜택이 뭐가 있나요?"
+  - profile / collection 에 나이, 소득, 임신 여부 등을 채우고,
+  - residual_query: "받을 수 있는 혜택이 뭐가 있나요?"
+- 입력: "저는 70세고 동작구에 사는 의료급여 2종입니다."
+  - 정보 입력만 있고 정책 질문이 없으므로
+  - residual_query: "" (빈 문자열) 또는 null
 
 주의:
 - 정보가 명확하지 않으면 value를 null로 두고 confidence를 0.0~0.5 정도로 낮게 설정해도 된다.
 - 모르는 필드는 그냥 null로 둔다.
 - 숫자(나이, 퍼센트 등)는 문자열로 넣어도 괜찮다.
-- 가능한 경우 질병명에 대응하는 코드(KCD7/ICD-10 등)를 추정해서 code_system, code에 넣어도 되지만, 자신 없으면 null로 두어라.
+- 가능한 경우 질병명에 대응하는 코드(KCD7/ICD-10 등)를 추정해서 code_system, code에 넣어도 되지만,
+  자신 없으면 null로 두어라.
+
 특히 장애등급(disability_grade)은 다음 규칙을 반드시 지켜라:
 
 - value는 **반드시 "0", "1", "2" 중 하나의 문자열**이어야 한다.
@@ -178,7 +218,8 @@ SYSTEM_PROMPT = """
   - "장애는 없습니다", "장애 없어요" → "0"
   - "경증 장애", "가벼운 장애", "심하지 않은 장애" → "1"
   - "중증 장애", "심한 장애", "심각한 장애" → "2"
-- 애매해서 확신이 없으면 disability_grade.value는 null로 두고, confidence를 0.3 이하로 설정하라.
+- 애매해서 확신이 없으면 disability_grade.value는 null로 두고,
+  confidence를 0.3 이하로 설정하라.
 
 반드시 아래 형태의 JSON만 응답하라:
 
@@ -207,7 +248,8 @@ SYSTEM_PROMPT = """
       },
       ...
     ]
-  }
+  },
+  "residual_query": "정보 부분을 제거하고 남은 정책/질문 문장. 없다면 빈 문자열 또는 null"
 }
 """.strip()
 
@@ -289,19 +331,22 @@ def _merge_ephemeral_collection(
 
     new_triples = []
     for t in extracted.triples:
-        new_triples.append({
-            "subject": t.subject,
-            "predicate": t.predicate,
-            "object": t.object,
-            "code_system": t.code_system,
-            "code": t.code,
-            "confidence": t.confidence,
-        })
+        new_triples.append(
+            {
+                "subject": t.subject,
+                "predicate": t.predicate,
+                "object": t.object,
+                "code_system": t.code_system,
+                "code": t.code,
+                "confidence": t.confidence,
+            }
+        )
 
     merged = existing_triples + new_triples
     return {"triples": merged}
 
 
+@traceable
 def extract(state: State) -> InfoExtractorOutput:
     """
     LangGraph 노드 함수.
@@ -315,6 +360,7 @@ def extract(state: State) -> InfoExtractorOutput:
     출력:
       - ephemeral_profile: 병합된 프로필 오버레이
       - ephemeral_collection: 병합된 트리플 리스트
+      - cleaned_user_input: 추출된 정보 부분을 제거한 후 남은 "정책 요청 문장"
       - messages: tool 로그 1줄 append (★ 기존 messages 전체를 리턴하지 않음)
     """
     text = (state.get("user_input") or "").strip()
@@ -333,7 +379,9 @@ def extract(state: State) -> InfoExtractorOutput:
         }
         return {
             "ephemeral_profile": dict(state.get("ephemeral_profile") or {}),
-            "ephemeral_collection": dict(state.get("ephemeral_collection") or {"triples": []}),
+            "ephemeral_collection": dict(
+                state.get("ephemeral_collection") or {"triples": []}
+            ),
             "messages": [tool_msg],
         }
 
@@ -346,7 +394,9 @@ def extract(state: State) -> InfoExtractorOutput:
         }
         return {
             "ephemeral_profile": dict(state.get("ephemeral_profile") or {}),
-            "ephemeral_collection": dict(state.get("ephemeral_collection") or {"triples": []}),
+            "ephemeral_collection": dict(
+                state.get("ephemeral_collection") or {"triples": []}
+            ),
             "messages": [tool_msg],
         }
 
@@ -355,11 +405,22 @@ def extract(state: State) -> InfoExtractorOutput:
         old_profile = dict(state.get("ephemeral_profile") or {})
         old_collection = state.get("ephemeral_collection") or {"triples": []}
 
-        merged_profile = _merge_ephemeral_profile(old_profile, result.profile, save_profile)
-        merged_collection = _merge_ephemeral_collection(old_collection, result.collection, save_collection)
+        merged_profile = _merge_ephemeral_profile(
+            old_profile, result.profile, save_profile
+        )
+        merged_collection = _merge_ephemeral_collection(
+            old_collection, result.collection, save_collection
+        )
 
-        # 로그
-        n_profile_fields = sum(1 for v in merged_profile.values() if isinstance(v, dict) and "value" in v)
+        # residual_query → cleaned_user_input 으로 넘김
+        cleaned = (result.residual_query or "").strip()
+
+        # 로그용 카운트
+        n_profile_fields = sum(
+            1
+            for v in merged_profile.values()
+            if isinstance(v, dict) and "value" in v
+        )
         n_triples = len(merged_collection.get("triples") or [])
 
         tool_msg: Message = {
@@ -370,14 +431,22 @@ def extract(state: State) -> InfoExtractorOutput:
                 "router": router_info,
                 "profile_fields": n_profile_fields,
                 "triples_total": n_triples,
+                "cleaned_user_input_len": len(cleaned),
             },
         }
 
-        return {
+        out: InfoExtractorOutput = {
             "ephemeral_profile": merged_profile,
             "ephemeral_collection": merged_collection,
             "messages": [tool_msg],
         }
+
+        # 복합문장 분리:
+        #  - 정보 입력 + 정책 요청이 섞인 경우 → cleaned_user_input 에 정책 요청만 들어감
+        #  - 순수 정보 입력만 있는 경우 → cleaned_user_input 은 빈 문자열 또는 짧은 문자열
+        out["cleaned_user_input"] = cleaned
+
+        return out
 
     except Exception as e:
         # 실패 시 안전 폴백: 아무것도 바꾸지 않고 로그만 남김
@@ -389,7 +458,9 @@ def extract(state: State) -> InfoExtractorOutput:
         }
         return {
             "ephemeral_profile": dict(state.get("ephemeral_profile") or {}),
-            "ephemeral_collection": dict(state.get("ephemeral_collection") or {"triples": []}),
+            "ephemeral_collection": dict(
+                state.get("ephemeral_collection") or {"triples": []}
+            ),
             "messages": [tool_msg],
         }
 
@@ -397,7 +468,7 @@ def extract(state: State) -> InfoExtractorOutput:
 if __name__ == "__main__":
     # 단독 테스트용 (직접 실행 시)
     dummy_state: State = {  # type: ignore
-        "user_input": "저는 68세 강북구 사는 의료급여 2종이고, 당뇨랑 고혈압이 있어요.",
+        "user_input": "저는 68세 강북구 사는 의료급여 2종이고, 당뇨랑 고혈압이 있어요. 이런 상황에서 받을 수 있는 혜택이 뭐가 있나요?",
         "messages": [],
         "ephemeral_profile": {},
         "ephemeral_collection": {},
@@ -412,3 +483,4 @@ if __name__ == "__main__":
     out = extract(dummy_state)  # type: ignore
     print("ephemeral_profile:", json.dumps(out["ephemeral_profile"], ensure_ascii=False, indent=2))
     print("ephemeral_collection:", json.dumps(out["ephemeral_collection"], ensure_ascii=False, indent=2))
+    print("cleaned_user_input:", json.dumps(out.get("cleaned_user_input", ""), ensure_ascii=False))

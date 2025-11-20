@@ -8,14 +8,7 @@ user_context_node.py
   2) merged_profile / merged_collection 기반으로 profile_summary_text 생성
   3) messages 기반 history_text(최근 대화 텍스트) 생성
   4) rolling_summary를 주기적으로 LLM으로 업데이트
-
-※ 기존 코드 출처
-  - retrieval_planner.py
-      * merge_profile / merge_collection 사용
-      * _profile_collection_to_text(...)
-      * _build_history_text(...)
-  - context_assembler.py
-      * _summarize(...)
+  5) 컬렉션 계층(L0/L1/L2) 정보를 state에 추가
 """
 
 from __future__ import annotations
@@ -318,6 +311,23 @@ def _summarize(old_summary: Optional[str], messages: List[Dict[str, Any]]) -> st
 # -------------------------------------------------------------------
 # 메인 노드 함수
 # -------------------------------------------------------------------
+def _normalize_collection_layer(raw: Any) -> Dict[str, Any]:
+    """
+    컬렉션 레이어용 보정 함수.
+    - dict & "triples" 있으면 그대로
+    - list 면 { "triples": list }로 감싸기
+    - None 이면 빈 구조
+    """
+    if isinstance(raw, dict):
+        if "triples" in raw:
+            return {"triples": list(raw.get("triples") or [])}
+        # 혹시 triples 키 없이 바로 리스트가 있는 형태라면 최대한 보정
+        return {"triples": list(raw.get("triples") or [])}
+    if isinstance(raw, list):
+        return {"triples": list(raw)}
+    return {"triples": []}
+
+
 def user_context_node(state: State) -> State:
     """
     LangGraph 노드:
@@ -325,10 +335,12 @@ def user_context_node(state: State) -> State:
     입력:
       - profile_id
       - ephemeral_profile / ephemeral_collection
+      - new_triples (info_extractor가 이번 턴에 추출한 triples)
       - messages / rolling_summary / turn_count
 
     출력/갱신:
       - merged_profile / merged_collection
+      - collection_layer_L0 / L1 / L2 (계층 컬렉션)
       - profile_summary_text
       - history_text
       - rolling_summary
@@ -359,7 +371,21 @@ def user_context_node(state: State) -> State:
     state["merged_profile"] = merged_profile
     state["merged_collection"] = merged_collection
 
-    # 3) profile_summary_text 생성
+    # 2-1) 컬렉션 계층 레이어 세팅
+    # L0: 이번 턴에서 info_extractor가 새로 추출한 triples
+    new_triples_raw = state.get("new_triples") or []
+    if not isinstance(new_triples_raw, list):
+        new_triples_raw = []
+
+    state["collection_layer_L0"] = {"triples": list(new_triples_raw)}
+
+    # L1: 이번 세션 동안의 임시 컬렉션 (ephemeral_collection)
+    state["collection_layer_L1"] = _normalize_collection_layer(eph_collection)
+
+    # L2: DB에 저장된 기존 컬렉션
+    state["collection_layer_L2"] = _normalize_collection_layer(db_collection)
+
+    # 3) profile_summary_text 생성 (merged 기준)
     profile_summary_text = _profile_collection_to_text(merged_profile, merged_collection)
     state["profile_summary_text"] = profile_summary_text
 

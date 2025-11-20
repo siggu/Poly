@@ -275,8 +275,10 @@ def build_graph():
             # 2) 초기화 + 저장 OR 기타 end_session=True → persist 후 종료
             if action == "reset_save" or state.get("end_session"):
                 return "persist_pipeline"
-
-            # 3) 나머지(특수한 end지만 end_session=False) → 그냥 종료
+            # 3) 중간 저장
+            if action == "save":
+                return "persist_pipeline"
+            # 4) 나머지(특수한 end지만 end_session=False) → 그냥 종료
             return END
 
         if nxt == "retrieval_planner":
@@ -344,7 +346,7 @@ if __name__ == "__main__":
     print("answer:", out.get("answer"))
     print("messages_count:", len(out.get("messages", [])))
 
-    print("=== RUN 2 (END SESSION) ===")
+    print("=== RUN 2 ===")
     out2 = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
@@ -353,6 +355,26 @@ if __name__ == "__main__":
         "end_session": False,
     }, config=cfg)
     print("answer2:", out2.get("answer"))
+    print("messages_count:", len(out2.get("messages", [])))
+    print("=== RUN 3  ===")
+    out3 = app.invoke({
+        "session_id": "sess-001",
+        "profile_id": 76,
+        "user_input": "장애인 관련 지원사업 알려주세요.",
+        "rolling_summary": out.get("rolling_summary"),
+        "end_session": False,
+    }, config=cfg)
+    print("answer3:", out2.get("answer"))
+    print("messages_count:", len(out2.get("messages", [])))
+    print("=== RUN 4(save)  ===")
+    out4 = app.invoke({
+        "session_id": "sess-001",
+        "profile_id": 76,
+        "user_input": "",
+        "rolling_summary": out.get("rolling_summary"),
+        "user_action": "save",
+    }, config=cfg)
+    print("answer4:", out2.get("answer"))
     print("messages_count:", len(out2.get("messages", [])))
     print("persist_result:", out2.get("persist_result"))
     print("done.")
