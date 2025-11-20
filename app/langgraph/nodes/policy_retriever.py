@@ -11,7 +11,7 @@ policy_retriever_node.py
      - 현재 질문(user_input)
   2) query_text 임베딩 + pgvector 기반 정책 DB 검색 (RAG)
   3) 프로필 기반 후보 필터링, system 스니펫 추가
-  4) state["retrieval"] 세팅
+  4) state["retrieval"], state["rag_snippets"], state["context"] 세팅
 
 ※ 기존 코드 출처
   - retrieval_planner.py
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import re
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
@@ -49,7 +50,7 @@ if not DB_URL:
 
 if DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
-    
+
 # -------------------------------------------------------------------
 # Retriever tunable parameters
 # -------------------------------------------------------------------
@@ -57,6 +58,7 @@ RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "24"))
 CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "24"))
 SIMILARITY_FLOOR = float(os.getenv("POLICY_RETRIEVER_SIM_FLOOR", "0.3"))
 MIN_CANDIDATES_AFTER_FLOOR = int(os.getenv("POLICY_RETRIEVER_MIN_AFTER_FLOOR", "5"))
+BM25_WEIGHT = float(os.getenv("POLICY_RETRIEVER_BM25_WEIGHT", "0.35"))
 
 # -------------------------------------------------------------------
 # Embedding Model (SentenceTransformer, BGE-m3-ko)
@@ -112,6 +114,114 @@ def extract_keywords(text: str, max_k: int = 8) -> List[str]:
                 if len(out) >= max_k:
                     break
     return out
+
+
+# -------------------------------------------------------------------
+# BM25 Re-ranking helpers
+# -------------------------------------------------------------------
+def _tokenize_for_bm25(text: str) -> List[str]:
+    """단순 토크나이저: 한글/영문/숫자 토큰을 소문자로 반환."""
+    if not text:
+        return []
+    return [t.lower() for t in re.findall(r"[가-힣A-Za-z0-9]+", text)]
+
+
+def _build_bm25_terms(query_text: str, merged_collection: Optional[Dict[str, Any]]) -> List[str]:
+    """사용자 질문 + 컬렉션(질환/병력 등) 기반 BM25 쿼리 토큰 구성."""
+    terms: List[str] = []
+    # 1) 질문에서 키워드 추출
+    terms.extend(extract_keywords(query_text or "", max_k=8))
+
+    # 2) 컬렉션 triple에서 object/code에 포함된 키워드 추가 (중복 제거)
+    if merged_collection and isinstance(merged_collection, dict):
+        triples = merged_collection.get("triples") or []
+        for tri in triples:
+            if not isinstance(tri, dict):
+                continue
+            obj = tri.get("object") or ""
+            code = tri.get("code") or ""
+            for tok in _tokenize_for_bm25(str(obj) + " " + str(code)):
+                if tok not in terms:
+                    terms.append(tok)
+    return terms
+
+
+def _apply_bm25_rerank(
+    docs: List[Dict[str, Any]],
+    query_terms: List[str],
+) -> None:
+    """주어진 후보 docs에 대해 BM25 점수를 계산하고 score 필드를 hybrid 점수로 갱신."""
+    if not docs or not query_terms:
+        return
+
+    # 문서별 토큰/길이/term frequency 계산
+    doc_tokens: List[List[str]] = []
+    doc_lens: List[int] = []
+    term_doc_freq: Dict[str, int] = {t: 0 for t in query_terms}
+
+    for doc in docs:
+        text_parts = [
+            doc.get("title") or "",
+            doc.get("requirements") or "",
+            doc.get("benefits") or "",
+        ]
+        tokens = _tokenize_for_bm25(" ".join(text_parts))
+        doc_tokens.append(tokens)
+        dl = len(tokens) or 1
+        doc_lens.append(dl)
+
+        # 각 쿼리 term이 등장하는지 세기
+        token_set = set(tokens)
+        for t in query_terms:
+            if t in token_set:
+                term_doc_freq[t] = term_doc_freq.get(t, 0) + 1
+
+    N = len(docs)
+    avgdl = sum(doc_lens) / float(N)
+
+    # BM25 파라미터
+    k1 = 1.5
+    b = 0.75
+
+    bm25_scores: List[float] = []
+    for idx, tokens in enumerate(doc_tokens):
+        tf: Dict[str, int] = {}
+        for tok in tokens:
+            if tok in query_terms:
+                tf[tok] = tf.get(tok, 0) + 1
+
+        dl = doc_lens[idx]
+        score = 0.0
+        for term in query_terms:
+            n_qi = term_doc_freq.get(term, 0)
+            if n_qi == 0:
+                continue
+            # BM25 idf
+            idf = math.log((N - n_qi + 0.5) / (n_qi + 0.5) + 1)
+            freq = tf.get(term, 0)
+            if freq == 0:
+                continue
+            denom = freq + k1 * (1 - b + b * dl / avgdl)
+            score += idf * (freq * (k1 + 1)) / denom
+        bm25_scores.append(score)
+
+    max_bm25 = max(bm25_scores) if bm25_scores else 0.0
+
+    # hybrid 점수 계산: similarity(벡터) + BM25
+    for doc, bm25 in zip(docs, bm25_scores):
+        # raw similarity는 별도 필드로 유지
+        sim_val = doc.get("similarity")
+        try:
+            sim = float(sim_val) if sim_val is not None else 0.0
+        except (TypeError, ValueError):
+            sim = 0.0
+
+        bm25_norm = (bm25 / max_bm25) if max_bm25 > 0 else 0.0
+        hybrid = (1.0 - BM25_WEIGHT) * sim + BM25_WEIGHT * bm25_norm
+
+        doc["bm25_score"] = bm25
+        # LLM/후속 단계에서 사용할 최종 score를 hybrid로 덮어씀
+        doc["score"] = hybrid
 
 
 # -------------------------------------------------------------------
@@ -195,23 +305,24 @@ def _hybrid_search_documents(
             d.benefits,
             d.region,
             d.url,
-            1 - (e.embedding <=> %(qvec)s::vector) AS similarity
+            MAX(1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
         FROM documents d
-        JOIN embeddings e ON d.id = e.doc_id
+        JOIN embeddings e ON d.id = e.doc_id AND e.field = 'requirements'
     """
-
-    params: Dict[str, Any] = {"qvec": qvec_str}
+    params = {"qvec": qvec_str}
 
     if region_filter:
-        # retrieval_planner와 동일한 지역 하드필터
         sql += " WHERE TRIM(d.region) = %(region)s::text"
         params["region"] = region_filter
 
     sql += """
-        ORDER BY e.embedding <=> %(qvec)s::vector
+        GROUP BY
+            d.id, d.title, d.requirements, d.benefits, d.region, d.url
+        ORDER BY similarity DESC
         LIMIT %(limit)s
     """
     params["limit"] = top_k
+
 
     rows = []
     with _get_conn() as conn:
@@ -250,10 +361,6 @@ def _hybrid_search_documents(
             }
         )
 
-    # similarity 내림차순 정렬 (SQL에서도 정렬하지만 혹시 몰라 한 번 더)
-    results.sort(key=lambda x: (x["similarity"] is not None, x["similarity"]), reverse=True)
-
-    # rag_snippets 포맷으로 재구성
     snippets: List[Dict[str, Any]] = []
     for r in results:
         snippet_entry: Dict[str, Any] = {
@@ -261,6 +368,8 @@ def _hybrid_search_documents(
             "title": r["title"],
             "source": r["region"] or "policy_db",
             "snippet": r["snippet"] or r["benefits"] or r["requirements"] or "",
+            # 초기 score는 벡터 유사도와 동일하게 설정
+            "similarity": r["similarity"],
             "score": r["similarity"],
         }
         if r["region"]:
@@ -316,7 +425,7 @@ def policy_retriever_node(state: State) -> State:
       - user_input: str (현재 질문)
 
     출력/갱신:
-      - state["retrieval"]
+      - state["retrieval"], state["rag_snippets"], state["context"]
     """
     query_text = state.get("user_input") or ""
     router_info: Dict[str, Any] = state.get("router") or {}
@@ -386,11 +495,24 @@ def policy_retriever_node(state: State) -> State:
                 )
                 rag_docs = filtered_by_sim
 
-        # similarity 기준 정렬 (None은 뒤로)
+        # --- BM25 기반 re-ranking (질문 + 컬렉션 조건 중심) ---
+        bm25_terms = _build_bm25_terms(query_text, merged_collection)
+        if bm25_terms:
+            print(f"[policy_retriever_node] BM25 re-ranking with terms: {bm25_terms}")
+            _apply_bm25_rerank(rag_docs, bm25_terms)
+
+        # hybrid score(벡터+BM25)를 기준으로 정렬 (None은 뒤로)
+        def _get_score(d: Dict[str, Any]) -> Optional[float]:
+            v = d.get("score")
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
         rag_docs.sort(
             key=lambda d: (
-                _get_sim(d) is None,
-                -(_get_sim(d) or 0.0),
+                _get_score(d) is None,
+                -(_get_score(d) or 0.0),
             )
         )
 
@@ -407,20 +529,34 @@ def policy_retriever_node(state: State) -> State:
     save_keywords = ("저장", "보관", "기록")
     refers_to_save = any(k in query_text for k in save_keywords)
     if end_requested or refers_to_save:
-        rag_docs.append({
-            "doc_id": "system:conversation_persist",
-            "title": "대화 저장 안내",
-            "snippet": "대화를 종료하면 저장 파이프라인이 자동 실행되어 대화 내용이 보관됩니다.",
-            "score": 1.0,
-        })
+        rag_docs.append(
+            {
+                "doc_id": "system:conversation_persist",
+                "title": "대화 저장 안내",
+                "snippet": "대화를 종료하면 저장 파이프라인이 자동 실행되어 대화 내용이 보관됩니다.",
+                "score": 1.0,
+            }
+        )
 
-    # --- retrieval 세팅 (필요 최소 필드만 유지) ---
+    # --- retrieval 세팅 ---
     retrieval: Dict[str, Any] = {
         "used_rag": use_rag,
+        "profile_ctx": merged_profile,
+        "collection_ctx": merged_collection,
         "rag_snippets": rag_docs,
+        "keywords": keywords,
+        "debug_search_text": search_text,
         "profile_summary_text": profile_summary_text,
     }
     state["retrieval"] = retrieval
+    state["rag_snippets"] = rag_docs
+
+    # answer_llm이 바로 쓸 수 있는 context 블록
+    state["context"] = {
+        "profile": merged_profile,
+        "collection": merged_collection,
+        "documents": rag_docs,
+        "summary": rolling_summary,
+    }
 
     return state
-
