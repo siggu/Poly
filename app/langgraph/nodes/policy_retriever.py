@@ -247,6 +247,7 @@ def _sanitize_region(region_value: Optional[Any]) -> Optional[str]:
     """
     region 값을 문자열로 정리.
     - dict 형태({'value': '강남구'})도 지원.
+    - '서울시 동작구', '서울특별시 동작구' 등은 마지막 토큰('동작구')만 남김.
     - 공백/빈 문자열이면 None.
     """
     if region_value is None:
@@ -259,7 +260,22 @@ def _sanitize_region(region_value: Optional[Any]) -> Optional[str]:
         return None
 
     region_str = str(region_value).strip()
-    return region_str or None
+    if not region_str:
+        return None
+
+    # 공백 기준으로 자르고, 뒤에서부터 '구/군/동/시'로 끝나는 토큰 찾기
+    tokens = region_str.split()
+    for tok in reversed(tokens):
+        tok = tok.strip()
+        if not tok:
+            continue
+        # '동작구', '분당구', '청주시' 등
+        if tok.endswith(("구", "군", "동", "시")):
+            return tok
+
+    # 위에서 못 찾으면 원문 그대로 사용
+    return region_str
+
 
 
 # -------------------------------------------------------------------
@@ -328,8 +344,10 @@ def _hybrid_search_documents(
     params = {"qvec": qvec_str}
 
     if region_filter:
-        sql += " WHERE TRIM(d.region) = %(region)s::text"
-        params["region"] = region_filter
+        # 예전: TRIM(d.region) = %(region)s::text
+        # 지금: '동작구'이면 '서울시 동작구', '동작구' 둘 다 매칭
+        sql += " WHERE d.region ILIKE %(region)s"
+        params["region"] = f"%{region_filter}%"
 
     sql += """
         GROUP BY
@@ -338,6 +356,7 @@ def _hybrid_search_documents(
         LIMIT %(limit)s
     """
     params["limit"] = top_k
+
 
 
     rows = []
