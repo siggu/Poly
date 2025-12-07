@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# 크롤링 결과물 (용량 큰 파일)
+app/crawling/output/
+app/output/
+
+# 임시 파일
+*.tmp
+*.bak
+
+# 테스트
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+docker/
+.dockerignore
+
+# 문서
+*.md
+!README.md
+PROJECT.md
+Pipeline-*.png

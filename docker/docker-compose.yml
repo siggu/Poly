@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Poly 애플리케이션 (FastAPI + Streamlit)
+  poly-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: poly-app
+    ports:
+      - "8000:8000"  # FastAPI
+      - "8501:8501"  # Streamlit
+    environment:
+      # OpenAI & AI Models
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY}
+
+      # LangSmith
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+
+      # Database (외부 Oracle Cloud DB 사용)
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DATABASE_URL=${DATABASE_URL}
+      - DB_URL=${DB_URL}
+
+      # FastAPI Backend URL
+      - FASTAPI_BASE_URL=http://localhost:8000
+
+    volumes:
+      # 개발 시 코드 변경 실시간 반영 (프로덕션에서는 제거)
+      - ../app:/app/app
+      - ../check_db.py:/app/check_db.py
+
+    restart: unless-stopped
+
+    # 외부 DB 연결 확인 (선택사항)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+    networks:
+      - poly-network
+
+networks:
+  poly-network:
+    driver: bridge

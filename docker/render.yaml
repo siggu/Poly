@@ -1,0 +1,31 @@
+services:
+  # Poly Web Service
+  - type: web
+    name: poly-app
+    env: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
+
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: DB_HOST
+        value: 152.67.192.180
+      - key: DB_PORT
+        value: 5432
+      - key: DB_NAME
+        value: database
+      - key: DB_USER
+        value: admin
+      - key: DB_PASSWORD
+        sync: false
+      - key: FASTAPI_BASE_URL
+        value: http://localhost:8000
+
+    healthCheckPath: /health
