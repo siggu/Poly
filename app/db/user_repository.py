@@ -62,11 +62,11 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
     try:
         with conn.cursor() as cursor:
             user_insert_query = """
-            INSERT INTO users (id, username, password_hash, main_profile_id, created_at, updated_at, id_uuid)
-            VALUES (%s::uuid, %s, %s, NULL, NOW(), NOW(), %s::uuid);
+            INSERT INTO users (id, username, password_hash, main_profile_id, created_at, updated_at)
+            VALUES (%s::uuid, %s, %s, NULL, NOW(), NOW());
             """
             cursor.execute(
-                user_insert_query, (new_user_id, username, password_hash, new_user_id)
+                user_insert_query, (new_user_id, username, password_hash)
             )
             logger.info(f"1. users 테이블에 삽입 완료. user_id: {new_user_id}")
 

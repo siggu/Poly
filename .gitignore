@@ -33,4 +33,7 @@ dist/
 # test examples
 .output_example/
 app/crawling/output/
-app/interface/
+app/interface/pgvector/
+backend.pid
+frontend.pid
+*.log

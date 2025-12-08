@@ -26,6 +26,11 @@ def save_session(user_info: Dict[str, Any], auth_token: str):
         user_info: 사용자 정보 딕셔너리
         auth_token: JWT 인증 토큰
     """
+    # 1.저장전 데이터 유효성 검증
+    if not user_info or not auth_token:
+        logger.error(f"x 세션 저장 실패: user_info 또는 auth_token이 비어있습니다.user_info: {user_info}, auth_token: {auth_token}")
+        return 
+
     session_file = get_session_file_path()
 
     # ✅ auth_token 포함하여 저장

@@ -41,7 +41,7 @@ app/output/
 htmlcov/
 
 # Docker
-docker/
+# docker/
 .dockerignore
 
 # 문서

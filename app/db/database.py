@@ -255,8 +255,8 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
             with conn.cursor() as cur:
                 # 1. 사용자 생성 (id_uuid 포함)
                 cur.execute(
-                    "INSERT INTO users (id, username, password_hash, id_uuid) VALUES (%s, %s, %s, %s)",
-                    (new_uuid_str, username, password_hash, new_uuid_str),
+                    "INSERT INTO users (id, username, password_hash) VALUES (%s, %s, %s)",
+                    (new_uuid_str, username, password_hash),
                 )
 
                 # 2. 기본 프로필 생성 - 매핑 적용
