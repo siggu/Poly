@@ -1,4 +1,5 @@
 """채팅 렌더링/메시지 전송/정책 카드 파싱"""
+
 # app/frontend/src/pages/chat.py
 import uuid
 import time
@@ -134,42 +135,31 @@ def render_chatbot_main():
                 )
 
             elif message["role"] == "assistant":
-                # AI 응답 시작
+                # AI 응답 - 메시지 내용을 HTML 안에 직접 포함
                 st.markdown(
-                    """
+                    f"""
                     <div class="chat-message-assistant">
                         <div class="chat-avatar">AI</div>
                         <div style="flex: 1;">
                             <div class="chat-bubble-assistant">
+                                <p>{message["content"]}</p>
+                            </div>
                 """,
                     unsafe_allow_html=True,
                 )
 
-                # 메시지 내용
-                st.markdown(message["content"])
-
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                # 정책 카드가 있으면 표시
+                # 정책 카드가 있으면 표시 (말풍선 밖에 표시)
                 if "policies" in message:
                     for policy in message["policies"]:
                         render_policy_card(policy)
 
                 # 인터랙션 버튼들
                 st.markdown('<div class="message-actions">', unsafe_allow_html=True)
-                # col1, col2, col3, col4 = st.columns([1, 1, 1, 8])
-                # with col1:
-                #     st.button("👍", key=f"like_{idx}", help="도움이 되었어요")
-                # with col2:
-                #     st.button("👎", key=f"dislike_{idx}", help="별로예요")
-                # with col3:
-                #     st.button("📋", key=f"copy_{idx}", help="복사")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 # AI 메시지 종료
                 st.markdown("</div></div>", unsafe_allow_html=True)
                 st.markdown('<hr class="message-divider">', unsafe_allow_html=True)
-
     st.markdown("</div>", unsafe_allow_html=True)
 
     # 추천 질문 (대화가 없을 때만 표시)
