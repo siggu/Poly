@@ -53,12 +53,13 @@ class BackendService:
         스트리밍을 사용하지 않고 전체 응답을 한 번에 받습니다.
         """
         url = f"{FASTAPI_BASE_URL}/api/v1/chat"
-        ok, user_profile = backend_service.get_user_profile(token)
 
-        if not ok:
-            st.error("프로필을 불러올 수 없습니다.")
-        else:
-            profile_id = user_profile.get("main_profile_id")
+        # profile_id가 제공되지 않은 경우에만 API에서 가져옴
+        if profile_id is None and token:
+            ok, user_profile = self.get_user_profile(token)
+            if ok:
+                profile_id = user_profile.get("main_profile_id")
+
         payload = {
             "session_id": session_id,
             "profile_id": profile_id,  # 👈 요청 payload에 포함

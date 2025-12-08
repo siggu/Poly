@@ -45,9 +45,11 @@ def handle_send_message(message: str):
 
     st.session_state["is_loading"] = True
 
+    # 활성 프로필 가져오기
     active_profile = next(
-        (p for p in st.session_state.profiles if p.get("isActive", False)), None
+        (p for p in st.session_state.get("profiles", []) if p.get("isActive", False)), None
     )
+    profile_id = active_profile.get("id") if active_profile else None
 
     try:
         with st.spinner("답변 생성중..."):
@@ -57,6 +59,7 @@ def handle_send_message(message: str):
                 session_id=st.session_state.get("session_id"),  # 세션 ID 전달
                 token=token,  # 인증 토큰 전달
                 user_input=message,
+                profile_id=profile_id,  # 활성 프로필 ID 전달
             )
 
             # 응답 처리
