@@ -11,15 +11,17 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-import google.generativeai as genai
+from openai import OpenAI
+# import google.generativeai as genai
 
 from app.langgraph.state.ephemeral_context import State as GraphState, Message
 
 load_dotenv()
 
 # Gemini API 설정
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gemini-2.0-flash")
+# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gpt-4o-mini")
 
 # ───────────────────────────────────────────────────────────
 # 시스템 프롬프트
@@ -348,37 +350,26 @@ def run_answer_llm(
         documents=documents,
     )
 
-    model = genai.GenerativeModel(ANSWER_MODEL)
-
-    # Gemini 2.x 에서는 system role 불가능 → system 프롬프트를 문자열 결합으로 넣어야 함
-    full_prompt = SYSTEM_PROMPT + "\n\n" + user_prompt
+    # OpenAI 메시지 구성
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
 
     try:
-        resp = model.generate_content(
-            full_prompt,
-            generation_config={"temperature": 0.3},
+        # OpenAI ChatCompletion 호출
+        resp = client.chat.completions.create(
+            model=ANSWER_MODEL,
+            messages=messages,
+            temperature=0.3,
         )
 
-        # 1) resp.text가 있을 경우
-        if hasattr(resp, "text") and resp.text:
-            return resp.text.strip()
-
-        # 2) Gemini 2.x 표준 구조: candidates[].content.parts[].text
-        if resp.candidates:
-            cand = resp.candidates[0]
-            if cand.content and cand.content.parts:
-                text = "".join(
-                    part.text
-                    for part in cand.content.parts
-                    if hasattr(part, "text")
-                )
-                return text.strip()
-
-        return str(resp)
+        return resp.choices[0].message.content.strip()
 
     except Exception as e:
-        print("🔥🔥 [Gemini ERROR]", e)
+        print("🔥🔥 [OpenAI ERROR]", e)
         raise
+
 
 # ───────────────────────────────────────────────────────────
 # 메시지 컨텍스트 추출

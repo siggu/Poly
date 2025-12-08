@@ -198,7 +198,12 @@ except Exception as e:
 # 6) answer_llm
 try:
     from app.langgraph.nodes.llm_answer_creator import answer as answer_llm_node
-except Exception:
+except Exception as e:
+    import logging
+    import traceback
+    logger = logging.getLogger(__name__)
+    logger.error(f"❌ Failed to import llm_answer_creator: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
     def answer_llm_node(state: State) -> Dict[str, Any]:
         ui = state.get("user_input") or ""
         ans = f"(더미 응답) 질문을 받았어요: {ui[:60]}"
