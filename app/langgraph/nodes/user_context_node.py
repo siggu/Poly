@@ -346,6 +346,7 @@ def user_context_node(state: State) -> State:
       - rolling_summary
     """
     profile_id = state.get("profile_id")
+    print(f"[user_context_node] profile_id from state: {profile_id}")
 
     # 1) DB에서 profile / collections 로드
     db_profile = None
@@ -353,6 +354,7 @@ def user_context_node(state: State) -> State:
     if profile_id is not None:
         try:
             db_profile = fetch_profile_from_db(profile_id)
+            print(f"[user_context_node] db_profile loaded: {db_profile}")
         except Exception as e:  # noqa: BLE001
             print(f"[user_context_node] fetch_profile_from_db error: {e}")
 

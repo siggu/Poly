@@ -42,13 +42,13 @@ def get_graph_app():
 # Request / Response Models
 # ─────────────────────────────────────
 
+
 class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     profile_id: Optional[int] = None  # 👈 프로필 ID 추가
     user_input: str
     user_action: str = "none"
     client_meta: Dict[str, Any] = {}
-
 
 
 class ChatDebug(BaseModel):
@@ -83,6 +83,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     base_end_session = req.user_action in ("reset_save", "reset_drop")
     init_state: Dict[str, Any] = {
         "session_id": session_id,
+        "profile_id": req.profile_id,
         "user_input": req.user_input,
         "user_action": req.user_action,
         "end_session": base_end_session,
