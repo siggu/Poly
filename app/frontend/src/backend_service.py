@@ -167,6 +167,11 @@ class BackendService:
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             return True, response.json()
+        except requests.exceptions.HTTPError as e:
+            # 401 Unauthorized일 경우 토큰 만료로 간주
+            if e.response.status_code == 401:
+                return False, "TOKEN_EXPIRED"
+            return False, f"프로필 조회 실패: {e}"
         except requests.exceptions.RequestException as e:
             return False, f"프로필 조회 실패: {e}"
 

@@ -37,3 +37,8 @@ app/interface/pgvector/
 backend.pid
 frontend.pid
 *.log
+
+# Session files (중요: 세션 파일은 개인정보를 포함하므로 Git에 커밋하지 않음)
+app/frontend/.session/
+.session/
+user_session.json

@@ -67,6 +67,19 @@ def load_session() -> Optional[Dict[str, Any]]:
         with open(session_file, "r", encoding="utf-8") as f:
             session_data = json.load(f)
 
+        # ✅ 토큰 만료 검증 추가
+        if "auth_token" in session_data:
+            try:
+                from jose import jwt, JWTError
+                # 토큰 디코딩 (만료 시 자동으로 예외 발생)
+                jwt.decode(session_data["auth_token"], "YOUR_SECRET_KEY", algorithms=["HS256"])
+                logger.info(f"✅ 세션 로드 완료 - 토큰 유효")
+            except JWTError as e:
+                logger.warning(f"⚠️ 저장된 토큰이 만료되었습니다: {e}")
+                logger.info("   → 세션 파일 자동 삭제")
+                clear_session()
+                return None
+
         # ✅ 로드 확인 로그
         logger.info(f"✅ 세션 로드 완료")
         logger.info(f"   - is_logged_in: {session_data.get('is_logged_in')}")

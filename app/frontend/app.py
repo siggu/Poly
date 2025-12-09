@@ -156,6 +156,15 @@ def load_user_profiles_from_backend(token: str) -> bool:
         # 1. 사용자 기본 정보 조회
         ok, user_info = backend_service.get_user_profile(token)
         if not ok:
+            # 토큰 만료 시 자동 로그아웃
+            if user_info == "TOKEN_EXPIRED":
+                logger.warning("⚠️ 토큰이 만료되었습니다. 자동 로그아웃합니다.")
+                st.session_state["is_logged_in"] = False
+                st.session_state["auth_token"] = None
+                st.session_state["user_info"] = None
+                st.session_state["profiles"] = []
+                st.warning("세션이 만료되었습니다. 다시 로그인해주세요.")
+                st.rerun()
             logger.error(f"❌ 사용자 정보 조회 실패: {user_info}")
             return False
         st.session_state["user_info"] = user_info

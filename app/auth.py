@@ -11,10 +11,8 @@ from app.schemas import TokenData
 # 설정 값 (실제 애플리케이션에서는 환경 변수나 설정 파일에서 불러와야 합니다.)
 SECRET_KEY = "YOUR_SECRET_KEY"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  
-# 30분
-REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7   
-# 7일
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24시간 (1일)
+REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30일
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
