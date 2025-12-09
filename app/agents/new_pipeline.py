@@ -327,6 +327,10 @@ def build_graph():
             END: END,
         },
     )
+
+    # 🔥 persist_pipeline → END (저장 후 종료)
+    graph.add_edge("persist_pipeline", END)
+
     # 인메모리 체크포인터 (thread_id 필요)
     checkpointer = MemorySaver()
     return graph.compile(checkpointer=checkpointer)
