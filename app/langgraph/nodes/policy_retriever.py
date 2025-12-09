@@ -475,34 +475,46 @@ def _hybrid_search_documents(
     qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
 
     # 3) pgvector 검색 + (선택적) 지역 하드필터
-    sql = """
-        SELECT
-            d.id,
-            d.title,
-            d.requirements,
-            d.benefits,
-            d.region,
-            d.url,
-            MAX(1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
-        FROM documents d
-        JOIN embeddings e
-          ON d.id = e.doc_id
-         AND e.field = 'title'
-    """
-    params = {"qvec": qvec_str}
-
+    # ✅ 성능 개선: MAX() 및 GROUP BY 제거, 서브쿼리로 region 필터 먼저 적용
     if region_filter:
-        # '동작구'이면 '서울시 동작구', '동작구' 둘 다 매칭
-        sql += " WHERE d.region ILIKE %(region)s"
-        params["region"] = f"%{region_filter}%"
-
-    sql += """
-        GROUP BY
-            d.id, d.title, d.requirements, d.benefits, d.region, d.url
-        ORDER BY similarity DESC
-        LIMIT %(limit)s
-    """
-    params["limit"] = top_k
+        # region 필터링을 먼저 적용하여 검색 범위 축소
+        sql = """
+            SELECT
+                d.id,
+                d.title,
+                d.requirements,
+                d.benefits,
+                d.region,
+                d.url,
+                (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
+            FROM documents d
+            JOIN embeddings e
+              ON d.id = e.doc_id
+             AND e.field = 'title'
+            WHERE d.region ILIKE %(region)s
+            ORDER BY e.embedding <=> %(qvec)s::vector
+            LIMIT %(limit)s
+        """
+        params = {"qvec": qvec_str, "region": f"%{region_filter}%", "limit": top_k}
+    else:
+        # region 필터 없을 때
+        sql = """
+            SELECT
+                d.id,
+                d.title,
+                d.requirements,
+                d.benefits,
+                d.region,
+                d.url,
+                (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
+            FROM documents d
+            JOIN embeddings e
+              ON d.id = e.doc_id
+             AND e.field = 'title'
+            ORDER BY e.embedding <=> %(qvec)s::vector
+            LIMIT %(limit)s
+        """
+        params = {"qvec": qvec_str, "limit": top_k}
 
     rows = []
     with _get_conn() as conn:

@@ -79,6 +79,12 @@ def handle_profile_select(profile_id: int):
         if success:
             # 세션 상태의 current_profile_id를 직접 업데이트
             st.session_state.current_profile_id = profile_id
+
+            # 🔥 user_info의 main_profile_id도 업데이트
+            ok_user, user_info = backend_service.get_user_profile(token)
+            if ok_user and isinstance(user_info, dict):
+                st.session_state["user_info"] = user_info
+
             st.toast("✅ 프로필이 전환되었습니다.")
         else:
             st.error(f"활성 프로필 변경 실패: {message}")
@@ -125,6 +131,11 @@ def handle_profile_delete(profile_id: int):
                     if ok:
                         # 세션 상태 업데이트
                         st.session_state.current_profile_id = new_active_profile_id
+
+                        # 🔥 user_info의 main_profile_id도 업데이트
+                        ok_user, user_info = backend_service.get_user_profile(token)
+                        if ok_user and isinstance(user_info, dict):
+                            st.session_state["user_info"] = user_info
                     else:
                         st.error("새 활성 프로필 설정에 실패했습니다.")
             # 남은 프로필이 없다면

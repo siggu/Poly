@@ -45,11 +45,22 @@ def handle_send_message(message: str):
 
     st.session_state["is_loading"] = True
 
-    # 활성 프로필 가져오기
-    active_profile = next(
-        (p for p in st.session_state.get("profiles", []) if p.get("isActive", False)), None
-    )
-    profile_id = active_profile.get("id") if active_profile else None
+    # 🔥 활성 프로필 가져오기 - user_info의 main_profile_id 사용
+    token = _get_auth_token()
+    profile_id = None
+
+    # user_info에서 main_profile_id를 먼저 확인
+    user_info = st.session_state.get("user_info")
+    if user_info and "main_profile_id" in user_info:
+        profile_id = user_info.get("main_profile_id")
+    else:
+        # user_info가 없으면 API에서 가져오기
+        if token:
+            ok, user_profile = backend_service.get_user_profile(token)
+            if ok and isinstance(user_profile, dict):
+                profile_id = user_profile.get("main_profile_id")
+                # session_state에도 저장
+                st.session_state["user_info"] = user_profile
 
     try:
         with st.spinner("답변 생성중..."):
