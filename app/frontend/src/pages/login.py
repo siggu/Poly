@@ -202,47 +202,40 @@ def render_signup_tab():
     sdata = st.session_state["signup_form_data"]
     err = st.session_state["auth_error"].get("signup", "")
 
-    # 🚨 [수정] 아이디 입력 필드와 중복 확인 버튼을 form 내부로 이동합니다.
-    with st.form("signup_form"):
-        # ===================================================================
-        # ✅ [이동 및 수정] ID 입력 및 중복 확인을 폼 내부로 가져옵니다.
-        # ===================================================================
-        col_id, col_check = st.columns([7, 3])
-        with col_id:
-            user_id = st.text_input(
-                "아이디 *",
-                value=sdata.get("userId", ""),
-                key="user_id",
-                placeholder="아이디를 입력하세요",
-            )
-        with col_check:
-            st.markdown("<br>", unsafe_allow_html=True)
-            # st.form 내부에서는 버튼의 key가 폼 제출 시에만 업데이트되므로,
-            # 중복 확인 로직은 별도의 폼 제출 로직 없이 처리하는 것이 좋습니다.
-            # 여기서는 편의를 위해 버튼 클릭 시 세션 상태를 업데이트하는 기존 로직을 유지하되,
-            # 폼 제출 로직과는 별개로 실행되도록 합니다.
-            if st.form_submit_button(
-                "아이디 중복 확인", key="btn_check_id_inside", use_container_width=True
-            ):
-                if user_id:
-                    is_available, msg = api_check_id_availability(user_id)
-                    if is_available:
-                        st.session_state["is_id_available"] = True
-                        st.success(msg)
-                    else:
-                        st.session_state["is_id_available"] = False
-                        st.error(msg)
-                # 중복 확인 버튼을 눌러도 전체 폼 제출로 간주되므로, 이후 제출 버튼 로직이 실행되지 않도록
-                # st.session_state.is_checking_id 상태를 활용하여 처리할 수도 있지만,
-                # 여기서는 사용자 경험을 위해 중복 확인 후 재실행(rerun)을 피하고
-                # 제출 버튼을 다시 누르도록 유도하는 방식을 선택합니다.
+    # ✅ 아이디 입력 및 중복 확인을 form 밖으로 이동
+    col_id, col_check = st.columns([7, 3])
+    with col_id:
+        user_id = st.text_input(
+            "아이디 *",
+            value=sdata.get("userId", ""),
+            key="user_id",
+            placeholder="아이디를 입력하세요",
+        )
+    with col_check:
+        st.markdown("<br>", unsafe_allow_html=True)
+        # form 밖에서는 일반 button 사용
+        if st.button(
+            "아이디 중복 확인", key="btn_check_id_outside", use_container_width=True
+        ):
+            if user_id:
+                is_available, msg = api_check_id_availability(user_id)
+                if is_available:
+                    st.session_state["is_id_available"] = True
+                    st.success(msg)
+                else:
+                    st.session_state["is_id_available"] = False
+                    st.error(msg)
+            else:
+                st.warning("아이디를 입력해주세요.")
 
-        # 폼 내부에 아이디 중복 확인 결과 표시 (선택 사항)
-        if st.session_state.get("is_id_available") is False:
-            st.error("아이디 중복 확인이 필요하거나, 사용 불가능한 아이디입니다.")
-        elif st.session_state.get("is_id_available") is True:
-            st.success("사용 가능한 아이디입니다.")
-        # ===================================================================
+    # 아이디 중복 확인 결과 표시
+    if st.session_state.get("is_id_available") is False:
+        st.error("사용 불가능한 아이디입니다.")
+    elif st.session_state.get("is_id_available") is True:
+        st.success("사용 가능한 아이디입니다.")
+
+    # 회원가입 폼 시작
+    with st.form("signup_form"):
 
         st.text_input(
             "비밀번호 *",
