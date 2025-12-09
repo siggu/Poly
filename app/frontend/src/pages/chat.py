@@ -221,13 +221,48 @@ def render_chatbot_main():
             if st.button("💾 저장하고 초기화", use_container_width=True):
                 token = _get_auth_token()
                 if token:
-                    st.toast("대화 내용 저장 기능은 구현 예정입니다.")
+                    # 🔥 user_info에서 profile_id 가져오기
+                    user_info = st.session_state.get("user_info")
+                    profile_id = user_info.get("main_profile_id") if user_info else None
+
+                    # 백엔드에 reset_save 액션 전송 (DB 저장 트리거)
+                    try:
+                        response = backend_service.send_chat_message(
+                            session_id=st.session_state.get("session_id"),
+                            token=token,
+                            user_input="",  # 빈 메시지
+                            user_action="reset_save",  # 저장 후 초기화
+                            profile_id=profile_id,
+                        )
+                        st.toast("✅ 대화 내용이 저장되었습니다.")
+                    except Exception as e:
+                        st.error(f"저장 중 오류 발생: {e}")
+
                 st.session_state.messages = []
+                st.session_state.session_id = None  # 세션 ID 초기화
                 st.session_state.save_chat_confirmation = False
                 st.rerun()
         with col2:
             if st.button("🗑️ 저장하지 않고 초기화", use_container_width=True):
+                # 백엔드에 reset_drop 액션 전송 (저장 없이 초기화)
+                token = _get_auth_token()
+                if token:
+                    user_info = st.session_state.get("user_info")
+                    profile_id = user_info.get("main_profile_id") if user_info else None
+
+                    try:
+                        backend_service.send_chat_message(
+                            session_id=st.session_state.get("session_id"),
+                            token=token,
+                            user_input="",
+                            user_action="reset_drop",  # 저장 없이 초기화
+                            profile_id=profile_id,
+                        )
+                    except Exception:
+                        pass  # 에러 무시 (어차피 초기화)
+
                 st.session_state.messages = []
+                st.session_state.session_id = None  # 세션 ID 초기화
                 st.session_state.save_chat_confirmation = False
                 st.rerun()
         with col3:
@@ -240,7 +275,22 @@ def render_chatbot_main():
             if st.button("💾 대화 저장", use_container_width=True):
                 token = _get_auth_token()
                 if token:
-                    st.toast("대화 내용 저장 기능은 구현 예정입니다.")
+                    # 🔥 user_info에서 profile_id 가져오기
+                    user_info = st.session_state.get("user_info")
+                    profile_id = user_info.get("main_profile_id") if user_info else None
+
+                    # 백엔드에 save 액션 전송 (대화 유지하며 DB 저장)
+                    try:
+                        response = backend_service.send_chat_message(
+                            session_id=st.session_state.get("session_id"),
+                            token=token,
+                            user_input="",  # 빈 메시지
+                            user_action="save",  # 저장만
+                            profile_id=profile_id,
+                        )
+                        st.toast("✅ 대화 내용이 저장되었습니다.")
+                    except Exception as e:
+                        st.error(f"저장 중 오류 발생: {e}")
                 else:
                     st.warning("로그인이 필요합니다.")
 
