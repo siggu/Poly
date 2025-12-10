@@ -409,6 +409,8 @@ def persist(
         no_store_policy=_no_store,
     )
 
+    print(f"[persist_pipeline] After cleaning: {len(cleaned)} messages (from {len(deduped_msgs)} deduped)", flush=True)
+
     # delta 로 반환할 tool 로그들은 따로 모은다.
     log_messages: List[Message] = []
 
@@ -422,6 +424,8 @@ def persist(
         )
     )
 
+    print(f"[persist_pipeline] Cleaner applied", flush=True)
+
     # 3) 최종 요약 생성
     final_summary = _summarize_session(rolling_summary, cleaned)
 
@@ -434,6 +438,8 @@ def persist(
     msg_count = len(cleaned)
     emb_count = len(embeddings)
 
+    print(f"[persist_pipeline] Starting DB transaction...", flush=True)
+
     try:
         with psycopg.connect(DB_URL, autocommit=False) as conn:
             with conn.cursor() as cur:
@@ -443,6 +449,7 @@ def persist(
 
                 # 5-1) profile / collections 병합 + upsert
                 if profile_id is not None:
+                    print(f"[persist_pipeline] Merging profile/collection for profile_id={profile_id}", flush=True)
                     merge_result = _diff_merge(cur, state)
                     merged_profile = merge_result.get("merged_profile")
                     merged_collection = merge_result.get("merged_collection")
@@ -479,6 +486,7 @@ def persist(
                 summary_obj: Dict[str, Any] = {"text": final_summary}
                 model_stats = state.get("model_stats") or {}
                 if profile_id is not None:
+                    print(f"[persist_pipeline] Upserting conversation for profile_id={profile_id}", flush=True)
                     conversation_id = db_user_utils.upsert_conversation(
                         cur,
                         profile_id=profile_id,
@@ -486,18 +494,26 @@ def persist(
                         model_stats=model_stats,
                         ended_at=datetime.now(timezone.utc),
                     )
+                    print(f"[persist_pipeline] Conversation ID: {conversation_id}", flush=True)
                 else:
                     warnings.append("conversation not saved: profile_id is None")
 
                 # 5-3) messages / embeddings insert
                 if conversation_id is not None:
+                    print(f"[persist_pipeline] Inserting {len(cleaned)} messages", flush=True)
                     db_user_utils.bulk_insert_messages(cur, conversation_id, cleaned)
                     if embeddings:
+                        print(f"[persist_pipeline] Inserting {len(embeddings)} embeddings", flush=True)
                         db_user_utils.bulk_insert_conversation_embeddings(cur, conversation_id, embeddings)
 
+                print(f"[persist_pipeline] Committing transaction...", flush=True)
                 conn.commit()
+                print(f"[persist_pipeline] Transaction committed successfully!", flush=True)
 
     except Exception as e:
+        print(f"[persist_pipeline] ERROR: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         warnings.append(f"DB error: {e}")
         log_messages.append(
             _append_tool(
