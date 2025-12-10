@@ -357,6 +357,9 @@ def persist(
         여기서는 그 전체를 읽어 DB에 저장만 하고,
         그래프에 되돌려줄 "messages"는 이번 노드에서 새로 남긴 tool 로그(delta)만 리턴한다.
     """
+    # 🔍 디버깅 로그
+    print(f"[persist_pipeline] STARTED - session_id={state.get('session_id')}, profile_id={state.get('profile_id')}, msg_count={len(state.get('messages', []))}", flush=True)
+
     # DB URL 없으면 DB 작업을 스킵하고 로그만 남김
     if not DB_URL:
         raw_msgs: List[Message] = list(state.get("messages") or [])

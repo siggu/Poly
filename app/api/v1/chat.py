@@ -79,6 +79,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
     # A) 세션 ID 생성/유지
     session_id = req.session_id or f"sess-{uuid4().hex}"
 
+    # 🔍 디버깅 로그 추가
+    print(f"[chat API] user_action='{req.user_action}', user_input='{req.user_input[:50] if req.user_input else '(empty)'}', session_id={session_id}", flush=True)
+
     # B) LangGraph에 넘길 초기 state
     base_end_session = req.user_action in ("reset_save", "reset_drop")
     init_state: Dict[str, Any] = {

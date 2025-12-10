@@ -272,6 +272,9 @@ def build_graph():
         nxt = (state or {}).get("next") or "info_extractor"
         action = (state or {}).get("user_action")
 
+        # 🔍 디버깅 로그
+        print(f"[route_edge] next='{nxt}', user_action='{action}'", flush=True)
+
         if nxt == "end":
             # 1) 초기화 + 저장 안 함 → 그냥 종료 (persist X)
             if action == "reset_drop":

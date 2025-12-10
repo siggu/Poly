@@ -218,6 +218,9 @@ def route(state: State) -> RouterOutput:
     text = (state.get("user_input") or "").strip()
     action = (state.get("user_action") or "none").strip()
 
+    # 🔍 디버깅 로그
+    print(f"[router] user_action='{action}', user_input='{text[:30] if text else '(empty)'}'", flush=True)
+
     # 1) 저장 버튼: 세션 유지 + persist_pipeline만 실행
     if action == "save":
         router_info = {
