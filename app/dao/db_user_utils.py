@@ -291,15 +291,12 @@ def upsert_conversation(
     summary_json = Json(summary) if summary is not None else None
     model_stats_json = Json(model_stats) if model_stats is not None else None
 
+    # 🔧 수정: ON CONFLICT 제거 - 항상 새 대화 생성
+    # 한 프로필이 여러 대화를 가질 수 있으므로 UPSERT가 아닌 INSERT만 수행
     cur.execute(
         """
         INSERT INTO conversations (profile_id, summary, model_stats, ended_at)
         VALUES (%s, %s, %s, %s)
-        ON CONFLICT (profile_id) DO UPDATE SET
-          summary = EXCLUDED.summary,
-          model_stats = EXCLUDED.model_stats,
-          ended_at = EXCLUDED.ended_at,
-          updated_at = NOW()
         RETURNING id
         """,
         (profile_id, summary_json, model_stats_json, ended_at),
