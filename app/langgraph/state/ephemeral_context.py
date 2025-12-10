@@ -119,6 +119,7 @@ class EphemeralContextState(TypedDict, total=False):
 
     # ── Router 결정 값 ──────────────────────────────────
     router: Dict[str, Any]
+    next: Optional[str]
 
     # ── Persist 결과 ────────────────────────────────────
     persist_result: PersistResult
