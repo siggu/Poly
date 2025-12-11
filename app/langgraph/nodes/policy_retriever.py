@@ -83,7 +83,11 @@ _embedding_model: Optional[SentenceTransformer] = None
 def _get_embed_model() -> SentenceTransformer:
     global _embedding_model
     if _embedding_model is None:
+        print(f"  ⚠️  [_get_embed_model] Loading model '{_EMBED_MODEL_NAME}' on device '{_EMBED_DEVICE}'...", flush=True)
         _embedding_model = SentenceTransformer(_EMBED_MODEL_NAME, device=_EMBED_DEVICE)
+        print(f"  ✅ [_get_embed_model] Model loaded successfully", flush=True)
+    else:
+        print(f"  ✅ [_get_embed_model] Using cached model", flush=True)
     return _embedding_model
 
 
@@ -92,8 +96,17 @@ def _embed_text(text: str) -> List[float]:
     SentenceTransformer encode → list[float]
     - normalize_embeddings=True 로 cosine distance에 맞춘다.
     """
+    import time
+    get_model_start = time.time()
     model = _get_embed_model()
-    return model.encode(text or "", normalize_embeddings=True).tolist()
+    get_model_elapsed = time.time() - get_model_start
+
+    encode_start = time.time()
+    result = model.encode(text or "", normalize_embeddings=True).tolist()
+    encode_elapsed = time.time() - encode_start
+
+    print(f"  🔍 [_embed_text] get_model: {get_model_elapsed:.2f}s, encode: {encode_elapsed:.2f}s", flush=True)
+    return result
 
 
 # -------------------------------------------------------------------
