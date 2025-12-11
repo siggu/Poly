@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dotenv import load_dotenv
 import os
+from contextlib import asynccontextmanager
 
 load_dotenv()
 
@@ -20,10 +21,36 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.v1 import user, chat
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    애플리케이션 시작/종료 시 실행되는 lifespan 이벤트
+    - Startup: 임베딩 모델을 사전 로딩하여 첫 번째 사용자 요청 대기 시간 제거
+    - Shutdown: 필요한 정리 작업 수행
+    """
+    # Startup: 임베딩 모델 사전 로딩
+    print("=" * 60)
+    print("🔄 임베딩 모델 사전 로딩 중...")
+    try:
+        from app.langgraph.nodes.policy_retriever import _get_embed_model
+        _get_embed_model()  # 모델을 메모리에 미리 로드
+        print("✅ 임베딩 모델 로딩 완료")
+    except Exception as e:
+        print(f"⚠️  임베딩 모델 로딩 실패: {e}")
+        print("   (첫 번째 요청 시 로딩됩니다)")
+    print("=" * 60)
+
+    yield
+
+    # Shutdown
+    print("🛑 서버 종료")
+
+
 app = FastAPI(
     title="HealthInformer API",
     description="Unified /api/chat endpoint to handle entire session flow.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS 설정 추가 (Streamlit과 통신 위해)
