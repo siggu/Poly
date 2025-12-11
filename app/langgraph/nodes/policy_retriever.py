@@ -475,10 +475,21 @@ def _hybrid_search_documents(
     qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
 
     # 3) pgvector 검색 + (선택적) 지역 하드필터
-    # ✅ 성능 개선: MAX() 및 GROUP BY 제거, 서브쿼리로 region 필터 먼저 적용
+    # ✅ 성능 개선: 쿼리를 두 단계로 분리하여 ivfflat 인덱스 사용 보장
     if region_filter:
-        # region 필터링을 먼저 적용하여 검색 범위 축소
+        # 1단계: 벡터 검색으로 후보 찾기 (인덱스 사용)
+        # 2단계: region 필터링 (더 많은 후보를 찾아서 필터링)
+        search_limit = top_k * 3  # 필터링 후 충분한 결과를 얻기 위해 3배로 검색
         sql = """
+            WITH vector_candidates AS (
+                SELECT
+                    e.doc_id,
+                    (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
+                FROM embeddings e
+                WHERE e.field = 'title'
+                ORDER BY e.embedding <=> %(qvec)s::vector
+                LIMIT %(search_limit)s
+            )
             SELECT
                 d.id,
                 d.title,
@@ -486,18 +497,16 @@ def _hybrid_search_documents(
                 d.benefits,
                 d.region,
                 d.url,
-                (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
-            FROM documents d
-            JOIN embeddings e
-              ON d.id = e.doc_id
-             AND e.field = 'title'
+                vc.similarity
+            FROM vector_candidates vc
+            JOIN documents d ON d.id = vc.doc_id
             WHERE d.region ILIKE %(region)s
-            ORDER BY e.embedding <=> %(qvec)s::vector
+            ORDER BY vc.similarity DESC
             LIMIT %(limit)s
         """
-        params = {"qvec": qvec_str, "region": f"%{region_filter}%", "limit": top_k}
+        params = {"qvec": qvec_str, "region": f"%{region_filter}%", "limit": top_k, "search_limit": search_limit}
     else:
-        # region 필터 없을 때
+        # region 필터 없을 때: 단순 벡터 검색 (인덱스 사용)
         sql = """
             SELECT
                 d.id,
@@ -507,10 +516,9 @@ def _hybrid_search_documents(
                 d.region,
                 d.url,
                 (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
-            FROM documents d
-            JOIN embeddings e
-              ON d.id = e.doc_id
-             AND e.field = 'title'
+            FROM embeddings e
+            JOIN documents d ON d.id = e.doc_id
+            WHERE e.field = 'title'
             ORDER BY e.embedding <=> %(qvec)s::vector
             LIMIT %(limit)s
         """
