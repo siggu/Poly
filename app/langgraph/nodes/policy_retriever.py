@@ -498,21 +498,9 @@ def _hybrid_search_documents(
     qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
 
     # 3) pgvector 검색 + (선택적) 지역 하드필터
-    # ✅ 성능 개선: 쿼리를 두 단계로 분리하여 ivfflat 인덱스 사용 보장
+    # ✅ region 필터를 벡터 검색 단계에 적용 (필터링된 문서 내에서만 검색)
     if region_filter:
-        # 1단계: 벡터 검색으로 후보 찾기 (인덱스 사용)
-        # 2단계: region 필터링 (더 많은 후보를 찾아서 필터링)
-        search_limit = top_k * 3  # 필터링 후 충분한 결과를 얻기 위해 3배로 검색
         sql = """
-            WITH vector_candidates AS (
-                SELECT
-                    e.doc_id,
-                    (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
-                FROM embeddings e
-                WHERE e.field = 'title'
-                ORDER BY e.embedding <=> %(qvec)s::vector
-                LIMIT %(search_limit)s
-            )
             SELECT
                 d.id,
                 d.title,
@@ -520,14 +508,15 @@ def _hybrid_search_documents(
                 d.benefits,
                 d.region,
                 d.url,
-                vc.similarity
-            FROM vector_candidates vc
-            JOIN documents d ON d.id = vc.doc_id
-            WHERE d.region ILIKE %(region)s
-            ORDER BY vc.similarity DESC
+                (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
+            FROM embeddings e
+            JOIN documents d ON d.id = e.doc_id
+            WHERE e.field = 'title'
+              AND d.region ILIKE %(region)s
+            ORDER BY e.embedding <=> %(qvec)s::vector
             LIMIT %(limit)s
         """
-        params = {"qvec": qvec_str, "region": f"%{region_filter}%", "limit": top_k, "search_limit": search_limit}
+        params = {"qvec": qvec_str, "region": f"%{region_filter}%", "limit": top_k}
     else:
         # region 필터 없을 때: 단순 벡터 검색 (인덱스 사용)
         sql = """
