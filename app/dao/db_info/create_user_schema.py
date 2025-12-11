@@ -16,7 +16,7 @@ create_user_schema.py
 
 환경변수:
   DATABASE_URL = postgresql://user:pass@host:5432/dbname
-  CONV_EMB_DIM (선택) = pgvector 차원 (기본 1024)
+  CONV_EMB_DIM (선택) = pgvector 차원 (기본 768)
 """
 
 import os
@@ -32,7 +32,7 @@ if not DB_URL:
 if DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
 
-DIM = int(os.getenv("CONV_EMB_DIM", "1024"))
+DIM = int(os.getenv("CONV_EMB_DIM", "768"))
 
 parser = argparse.ArgumentParser(description="Initialize users/profiles + conversations/messages/embeddings schemas")
 parser.add_argument("--drop", action="store_true", help="기존 테이블/ENUM 삭제 후 재생성")

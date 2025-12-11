@@ -62,7 +62,7 @@ def _load_st_model(model_name: str):
         _ST_MODEL = SentenceTransformer(model_name)
     return _ST_MODEL
 
-EMB_DIM = 1024  # pgvector(1024)
+EMB_DIM = 768  # pgvector(768) - jhgan/ko-sroberta-multitask
 def _pad_or_truncate(vec, dim=EMB_DIM):
     if len(vec) == dim: return vec
     if len(vec) > dim:  return vec[:dim]
@@ -195,7 +195,7 @@ def ensure_embeddings_schema(cur):
         id BIGSERIAL PRIMARY KEY,
         doc_id BIGINT REFERENCES documents(id) ON DELETE CASCADE,
         field TEXT,
-        embedding vector(1024),
+        embedding vector(768),
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
     """)
@@ -212,8 +212,11 @@ def main():
     args = build_argparser().parse_args()
     json_path = args.file
     reset_mode = args.reset
-    model_name = args.model
+    # 환경변수 우선, 없으면 커맨드라인 인자 사용
+    model_name = os.getenv("EMBEDDING_MODEL") or args.model
     commit_every = max(1, args.commit_every)
+
+    print(f"📦 Using embedding model: {model_name}")
 
     # 입력 데이터 준비
     if json_path == "__demo__":
@@ -306,7 +309,7 @@ def main():
                     emb_rows.append((doc_id, field, _to_vector_literal(vec)))
 
             if emb_rows:
-                # embeddings(doc_id, field, embedding vector(1024))
+                # embeddings(doc_id, field, embedding vector(768))
                 execute_values(
                     cur,
                     "INSERT INTO embeddings (doc_id, field, embedding) VALUES %s",

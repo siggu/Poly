@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 # ──────────────────────────────────────────────────────────────────
 # 설정
 # ──────────────────────────────────────────────────────────────────
-DEFAULT_DIM = 1024  # dragonkue/BGE-m3-ko기준. 모델 바뀌면 옵션 --dim 사용.
+DEFAULT_DIM = 768  # jhgan/ko-sroberta-multitask 기준. 모델 바뀌면 옵션 --dim 사용.
 
 # ──────────────────────────────────────────────────────────────────
 # DSN
@@ -287,7 +287,7 @@ def check_schema(conn):
 # ──────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description="Policy DB creator / migrator (pgvector)")
-    ap.add_argument("--dim", type=int, default=DEFAULT_DIM, help="pgvector 차원 (기본 1024)")
+    ap.add_argument("--dim", type=int, default=DEFAULT_DIM, help="pgvector 차원 (기본 768)")
     ap.add_argument("--migrate-only", action="store_true", help="테이블 생성은 건너뛰고 타입 보정/마이그레이션만 수행")
     ap.add_argument("--drop-all", action="store_true", help="⚠️ documents/embeddings 전부 삭제 후 재생성")
     ap.add_argument("--reindex", action="store_true", help="인덱스 재생성")

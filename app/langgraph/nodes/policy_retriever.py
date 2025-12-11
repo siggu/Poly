@@ -102,10 +102,12 @@ def _embed_text(text: str) -> List[float]:
     get_model_elapsed = time.time() - get_model_start
 
     encode_start = time.time()
-    result = model.encode(text or "", normalize_embeddings=True).tolist()
+    text_to_encode = text or ""
+    text_length = len(text_to_encode)
+    result = model.encode(text_to_encode, normalize_embeddings=True).tolist()
     encode_elapsed = time.time() - encode_start
 
-    print(f"  🔍 [_embed_text] get_model: {get_model_elapsed:.2f}s, encode: {encode_elapsed:.2f}s", flush=True)
+    print(f"  🔍 [_embed_text] get_model: {get_model_elapsed:.2f}s, encode: {encode_elapsed:.2f}s, text_len: {text_length} chars", flush=True)
     return result
 
 
