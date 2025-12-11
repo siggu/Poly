@@ -56,11 +56,12 @@ if DB_URL.startswith("postgresql+psycopg://"):
 # -------------------------------------------------------------------
 # Retriever tunable parameters
 # -------------------------------------------------------------------
-RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "24"))
-CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "24"))
+# ⚡ 성능 최적화: 검색 문서 수를 줄여서 처리 시간 단축
+RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "12"))  # 24 → 12
+CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "8"))  # 24 → 8
 SIMILARITY_FLOOR = float(os.getenv("POLICY_RETRIEVER_SIM_FLOOR", "0.3"))
 MIN_CANDIDATES_AFTER_FLOOR = int(os.getenv("POLICY_RETRIEVER_MIN_AFTER_FLOOR", "5"))
-BM25_WEIGHT = float(os.getenv("POLICY_RETRIEVER_BM25_WEIGHT", "0.35"))
+BM25_WEIGHT = float(os.getenv("POLICY_RETRIEVER_BM25_WEIGHT", "0.2"))  # 0.35 → 0.2
 
 # 컬렉션 계층별 weight (L0 > L1 > L2)
 LAYER_WEIGHTS = {
@@ -464,12 +465,19 @@ def _hybrid_search_documents(
     else:
         print("[policy_retriever_node] merged_profile is None or empty")
 
+    # 🔍 타이밍 측정 시작
+    import time
+    func_start = time.time()
+
     # 2) 임베딩 계산 (정책 요청용 텍스트)
+    embed_start = time.time()
     try:
         qvec = _embed_text(query_text)
     except Exception as e:
         print(f"[policy_retriever_node] embed failed: {e}")
         return [], debug_keywords
+    embed_elapsed = time.time() - embed_start
+    print(f"🔍 [Embedding] {embed_elapsed:.2f}s", flush=True)
 
     # psycopg3에서 VECTOR 타입으로 캐스팅하기 위해 문자열 리터럴 사용
     qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
@@ -525,10 +533,13 @@ def _hybrid_search_documents(
         params = {"qvec": qvec_str, "limit": top_k}
 
     rows = []
+    db_start = time.time()
     with _get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
+    db_elapsed = time.time() - db_start
+    print(f"🔍 [DB Query] {db_elapsed:.2f}s, returned {len(rows)} rows", flush=True)
 
     # 4) 결과 가공 → rag_snippets 포맷
     results: List[Dict[str, Any]] = []
@@ -585,6 +596,10 @@ def _hybrid_search_documents(
         if r["benefits"]:
             snippet_entry["benefits"] = r["benefits"]
         snippets.append(snippet_entry)
+
+    # 🔍 타이밍 측정 종료
+    func_elapsed = time.time() - func_start
+    print(f"🔍 [_hybrid_search_documents] Total: {func_elapsed:.2f}s", flush=True)
 
     return snippets, debug_keywords
 
