@@ -177,7 +177,20 @@ def _is_eligible_by_basic_benefit(profile: Optional[Dict[str, Any]], doc: Dict[s
     if user_basic is None:
         return True  # 정보 없으면 일단 통과 (너무 공격적으로 거르지 않음)
 
+    # 영어 코드를 한글로 매핑
+    BENEFIT_TYPE_MAP = {
+        "LIVELIHOOD": "생계급여",
+        "MEDICAL": "의료급여",
+        "HOUSING": "주거급여",
+        "EDUCATION": "교육급여",
+        "NONE": "",
+    }
+
     ub = user_basic.replace(" ", "")
+    # 영어 코드면 한글로 변환
+    if ub.upper() in BENEFIT_TYPE_MAP:
+        ub = BENEFIT_TYPE_MAP[ub.upper()]
+
     if needs_basic and not any(x in ub for x in ["생계", "의료", "기초", "급여"]):
         return False
 
