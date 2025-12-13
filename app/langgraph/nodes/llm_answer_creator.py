@@ -146,7 +146,7 @@ def _format_collection_ctx(items: Optional[List[Dict[str, Any]]]) -> str:
     if not items:
         return ""
     out = []
-    for it in items[:8]:
+    for it in items[:5]:
         if "error" in it:
             continue
         segs = []
@@ -163,7 +163,7 @@ def _format_documents(items: Optional[List[Dict[str, Any]]]) -> str:
         return ""
     out: List[str] = []
 
-    for idx, doc in enumerate(items[:6], start=1):
+    for idx, doc in enumerate(items[:4], start=1):
         if not isinstance(doc, dict):
             continue
 
@@ -251,21 +251,14 @@ def run_answer_llm(
     ]
 
     try:
-        # OpenAI ChatCompletion 호출 (스트리밍 활성화)
+        # OpenAI ChatCompletion 호출
         resp = client.chat.completions.create(
             model=ANSWER_MODEL,
             messages=messages,
             temperature=0.3,
-            stream=True,
         )
 
-        # 스트리밍 응답 처리
-        text_chunks = []
-        for chunk in resp:
-            if chunk.choices[0].delta.content:
-                text_chunks.append(chunk.choices[0].delta.content)
-
-        return "".join(text_chunks).strip()
+        return resp.choices[0].message.content.strip()
 
     except Exception as e:
         print("🔥🔥 [OpenAI ERROR]", e)

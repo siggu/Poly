@@ -60,13 +60,11 @@ load_dotenv()
 
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", "gpt-4o-mini")
 
-_client: Optional[OpenAI] = None
+# 모듈 로드 시점에 즉시 초기화하여 cold start 방지
+_client = OpenAI()
 
 
 def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI()
     return _client
 
 
