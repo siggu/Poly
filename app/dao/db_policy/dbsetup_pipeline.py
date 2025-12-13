@@ -178,8 +178,11 @@ def build_vector_literal(vec, dim=EMB_DIM):
 # DB 업로드 (진행률 % 표시 + eval_* 반영 + pgvector 안전삽입)
 # ─────────────────────────────────────────────
 def upload_records(
-    records, reset="none", emb_model="dragonkue/BGE-m3-ko", commit_every=50
+    records, reset="none", emb_model=None, commit_every=50
 ):
+    # 환경 변수에서 임베딩 모델 읽기
+    if emb_model is None:
+        emb_model = os.getenv("EMBEDDING_MODEL", "jhgan/ko-sroberta-multitask")
     if not records:
         eprint("[upload] 업로드할 레코드가 없습니다.")
         return

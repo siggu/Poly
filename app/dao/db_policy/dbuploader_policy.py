@@ -72,7 +72,7 @@ def get_embedding(text: str, model_name: str):
     if not text or not str(text).strip():
         return None
     m = _load_st_model(model_name)
-    v = m.encode(str(text).strip(), normalize_embeddings=False)
+    v = m.encode(str(text).strip(), normalize_embeddings=True)
     v = v.tolist() if hasattr(v, "tolist") else list(v)
     v = _pad_or_truncate(v, EMB_DIM)
     return v
