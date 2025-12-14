@@ -63,34 +63,61 @@ def handle_send_message(message: str):
                 st.session_state["user_info"] = user_profile
 
     try:
-        with st.spinner("답변 생성중..."):
-            # 스트리밍 대신 단일 응답 호출로 변경
-            token = _get_auth_token()  # 인증 토큰 가져오기
-            response = backend_service.send_chat_message(
-                session_id=st.session_state.get("session_id"),  # 세션 ID 전달
-                token=token,  # 인증 토큰 전달
+        # 스트리밍 방식으로 답변 생성
+        token = _get_auth_token()
+
+        # 플레이스홀더 생성 (실시간 업데이트용)
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_answer = ""
+
+            # 스트리밍 시작
+            for event in backend_service.send_chat_message_stream(
+                session_id=st.session_state.get("session_id"),
+                token=token,
                 user_input=message,
-                profile_id=profile_id,  # 활성 프로필 ID 전달
-            )
+                profile_id=profile_id,
+            ):
+                event_type = event.get("type")
 
-            # 응답 처리
-            answer = response.get("answer", "응답을 받지 못했습니다.")
-            st.session_state["session_id"] = response.get(
-                "session_id"
-            )  # 세션 ID 업데이트
+                if event_type == "metadata":
+                    # 세션 ID 업데이트
+                    new_session_id = event.get("session_id")
+                    if new_session_id:
+                        st.session_state["session_id"] = new_session_id
 
-            # 디버그 정보 저장 (선택 사항)
-            if "debug" in response:
-                st.session_state["last_debug"] = response["debug"]
+                    # 디버그 정보 저장
+                    if "debug" in event:
+                        st.session_state["last_debug"] = event["debug"]
 
+                elif event_type == "chunk":
+                    # 청크를 받아서 누적 및 실시간 표시
+                    chunk = event.get("content", "")
+                    full_answer += chunk
+                    message_placeholder.markdown(full_answer + "▌")  # 타이핑 커서
+
+                elif event_type == "done":
+                    # 스트리밍 완료
+                    break
+
+                elif event_type == "error":
+                    # 오류 발생
+                    error_msg = event.get("message", "알 수 없는 오류")
+                    full_answer = f"죄송합니다. 오류가 발생했습니다: {error_msg}"
+                    break
+
+            # 최종 답변 표시 (커서 제거)
+            message_placeholder.markdown(full_answer if full_answer else "응답을 받지 못했습니다.")
+
+        # 메시지 저장
         assistant_message = {
             "id": str(uuid.uuid4()),
             "role": "assistant",
-            "content": answer,
+            "content": full_answer if full_answer else "응답을 받지 못했습니다.",
             "timestamp": time.time(),
         }
 
-        policies = _extract_policies_from_text(answer)
+        policies = _extract_policies_from_text(assistant_message["content"])
         if policies:
             assistant_message["policies"] = policies
 

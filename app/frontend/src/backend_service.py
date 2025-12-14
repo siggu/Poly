@@ -89,6 +89,84 @@ class BackendService:
                 "debug": {},
             }
 
+    def send_chat_message_stream(
+        self,
+        session_id: Optional[str],
+        user_input: str,
+        token: Optional[str] = None,
+        user_action: str = "none",
+        profile_id: Optional[int] = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        스트리밍 방식으로 채팅 메시지를 전송하고 실시간 응답을 받습니다.
+        Server-Sent Events (SSE)를 파싱하여 청크 단위로 yield합니다.
+
+        Yields:
+            Dict[str, Any]: SSE 이벤트 데이터
+                - type: "metadata" | "chunk" | "done" | "error"
+                - content: 텍스트 청크 (type="chunk"일 때)
+                - session_id: 세션 ID (type="metadata"일 때)
+                - 기타 메타데이터
+        """
+        import json
+
+        url = f"{FASTAPI_BASE_URL}/api/v1/chat/stream"
+
+        # profile_id가 제공되지 않은 경우에만 API에서 가져옴
+        if profile_id is None and token:
+            ok, user_profile = self.get_user_profile(token)
+            if ok:
+                profile_id = user_profile.get("main_profile_id")
+
+        payload = {
+            "session_id": session_id,
+            "profile_id": profile_id,
+            "user_input": user_input,
+            "user_action": user_action,
+            "client_meta": {
+                "ui_lang": "ko",
+                "app_version": "streamlit-v1"
+            }
+        }
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                stream=True,  # 스트리밍 활성화
+                timeout=120
+            )
+            response.raise_for_status()
+
+            # SSE 이벤트 파싱
+            for line in response.iter_lines():
+                if not line:
+                    continue
+
+                line = line.decode('utf-8')
+
+                # SSE 형식: "data: {json}"
+                if line.startswith('data: '):
+                    data_str = line[6:]  # "data: " 제거
+                    try:
+                        data = json.loads(data_str)
+                        yield data
+                    except json.JSONDecodeError as e:
+                        print(f"JSON 파싱 오류: {e}, 데이터: {data_str[:100]}")
+                        continue
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"스트리밍 API 요청 중 오류 발생: {e}"
+            print(error_msg)
+            yield {
+                "type": "error",
+                "message": error_msg
+            }
+
     # ==============================================================================
     # 사용자 인증 및 프로필 API 호출
     # ==============================================================================
