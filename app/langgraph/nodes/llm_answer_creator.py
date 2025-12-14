@@ -256,6 +256,7 @@ def run_answer_llm(
             model=ANSWER_MODEL,
             messages=messages,
             temperature=0.3,
+            timeout=15.0,  # 타임아웃 설정
         )
 
         return resp.choices[0].message.content.strip()
@@ -263,6 +264,53 @@ def run_answer_llm(
     except Exception as e:
         print("🔥🔥 [OpenAI ERROR]", e)
         raise
+
+
+def run_answer_llm_stream(
+    input_text: str,
+    used: str,
+    profile_ctx: Optional[Dict[str, Any]],
+    collection_ctx: Optional[List[Dict[str, Any]]],
+    summary: Optional[str] = None,
+    documents: Optional[List[Dict[str, Any]]] = None,
+):
+    """
+    스트리밍 방식으로 LLM 응답을 생성합니다.
+    제너레이터를 반환하여 청크 단위로 텍스트를 yield합니다.
+    """
+    user_prompt = _build_user_prompt(
+        input_text,
+        used,
+        profile_ctx,
+        collection_ctx,
+        summary=summary,
+        documents=documents,
+    )
+
+    # OpenAI 메시지 구성
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        # OpenAI ChatCompletion 스트리밍 호출
+        stream = client.chat.completions.create(
+            model=ANSWER_MODEL,
+            messages=messages,
+            temperature=0.3,
+            timeout=15.0,
+            stream=True,  # 스트리밍 활성화
+        )
+
+        # 청크 단위로 yield
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                yield chunk.choices[0].delta.content
+
+    except Exception as e:
+        print("🔥🔥 [OpenAI STREAM ERROR]", e)
+        yield f"\n\n[오류 발생: {str(e)}]"
 
 
 # ───────────────────────────────────────────────────────────
@@ -366,23 +414,31 @@ def answer(state: GraphState) -> Dict[str, Any]:
     if not used:
         used = _infer_used_flag(profile_ctx, collection_ctx_list, documents)
 
-    try:
-        text = run_answer_llm(
-            input_text,
-            used,
-            profile_ctx,
-            collection_ctx_list,
-            summary=summary,
-            documents=documents,
-        )
-    except Exception:
-        text = _build_fallback_text(
-            used,
-            profile_ctx,
-            collection_ctx_list,
-            documents,
-            summary,
-        )
+    # 스트리밍 모드인 경우 LLM 호출 스킵 (API 레벨에서 처리)
+    streaming_mode = state.get("streaming_mode", False)
+
+    if streaming_mode:
+        # 스트리밍 모드: 컨텍스트만 저장하고 답변 생성은 스킵
+        text = ""  # 빈 텍스트
+    else:
+        # 일반 모드: LLM 호출하여 답변 생성
+        try:
+            text = run_answer_llm(
+                input_text,
+                used,
+                profile_ctx,
+                collection_ctx_list,
+                summary=summary,
+                documents=documents,
+            )
+        except Exception:
+            text = _build_fallback_text(
+                used,
+                profile_ctx,
+                collection_ctx_list,
+                documents,
+                summary,
+            )
 
     citations = {
         "profile": profile_ctx,
@@ -412,6 +468,15 @@ def answer(state: GraphState) -> Dict[str, Any]:
             "used": used,
         },
         "messages": [assistant_message],
+        # 스트리밍용 컨텍스트 저장
+        "streaming_context": {
+            "input_text": input_text,
+            "used": used,
+            "profile_ctx": profile_ctx,
+            "collection_ctx": collection_ctx_list,
+            "summary": summary,
+            "documents": documents,
+        },
     }
 
 

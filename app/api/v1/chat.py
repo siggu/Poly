@@ -4,7 +4,9 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import json
 
 from app.agents.new_pipeline import build_graph
 
@@ -170,4 +172,147 @@ async def chat(req: ChatRequest) -> ChatResponse:
         session_ended=session_ended,
         save_result=save_result,
         debug=debug,
+    )
+
+
+# ─────────────────────────────────────
+# /api/chat/stream (스트리밍)
+# ─────────────────────────────────────
+@router.post("/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """
+    채팅 메시지를 처리하고 스트리밍 방식으로 응답을 반환합니다.
+    Server-Sent Events (SSE) 형식으로 응답을 전송합니다.
+
+    첫 토큰이 0.5-1초 내 도착하여 사용자 체감 대기시간을 최소화합니다.
+    """
+    from app.langgraph.nodes.llm_answer_creator import run_answer_llm_stream
+
+    # A) 세션 ID 생성/유지
+    session_id = req.session_id or f"sess-{uuid4().hex}"
+
+    print(f"[chat/stream API] user_action='{req.user_action}', user_input='{req.user_input[:50] if req.user_input else '(empty)'}', session_id={session_id}", flush=True)
+
+    # B) LangGraph에 넘길 초기 state (streaming_mode=True 추가)
+    base_end_session = req.user_action in ("reset_save", "reset_drop")
+    init_state: Dict[str, Any] = {
+        "session_id": session_id,
+        "profile_id": req.profile_id,
+        "user_input": req.user_input,
+        "user_action": req.user_action,
+        "end_session": base_end_session,
+        "client_meta": req.client_meta,
+        "streaming_mode": True,  # 스트리밍 모드 활성화
+    }
+
+    # C) 세션 기반 체크포인트 사용
+    config = {"configurable": {"thread_id": session_id}}
+
+    # D) LangGraph 실행 (answer_llm은 스킵됨)
+    try:
+        graph_app = get_graph_app()
+    except HTTPException as e:
+        raise e
+
+    out_state: Dict[str, Any] = graph_app.invoke(init_state, config=config)
+
+    # E) 스트리밍용 컨텍스트 추출
+    streaming_ctx = out_state.get("streaming_context") or {}
+
+    input_text = streaming_ctx.get("input_text", "")
+    used = streaming_ctx.get("used", "NONE")
+    profile_ctx = streaming_ctx.get("profile_ctx")
+    collection_ctx = streaming_ctx.get("collection_ctx")
+    summary = streaming_ctx.get("summary")
+    documents = streaming_ctx.get("documents")
+
+    # F) 디버그 정보 준비
+    retrieval = out_state.get("retrieval") or {}
+    rag_snippets = retrieval.get("rag_snippets") or []
+
+    router_decision = (
+        "save"
+        if req.user_action == "save"
+        else (
+            req.user_action
+            if req.user_action in ("reset_save", "reset_drop")
+            else "normal"
+        )
+    )
+
+    used_rag = retrieval.get("used_rag")
+
+    policy_ids: List[int] = []
+    for doc in rag_snippets:
+        doc_id = doc.get("doc_id")
+        if isinstance(doc_id, int):
+            policy_ids.append(doc_id)
+
+    # G) 스트리밍 제너레이터 정의
+    async def generate():
+        # 1) 메타데이터 전송 (세션 정보, 디버그 정보)
+        metadata = {
+            "type": "metadata",
+            "session_id": session_id,
+            "debug": {
+                "router_decision": router_decision,
+                "used_rag": bool(used_rag),
+                "policy_ids": policy_ids,
+            },
+        }
+        yield f"data: {json.dumps(metadata, ensure_ascii=False)}\n\n"
+
+        # 2) LLM 스트리밍 시작
+        full_text = ""
+        try:
+            for chunk in run_answer_llm_stream(
+                input_text=input_text,
+                used=used,
+                profile_ctx=profile_ctx,
+                collection_ctx=collection_ctx,
+                summary=summary,
+                documents=documents,
+            ):
+                full_text += chunk
+                chunk_data = {
+                    "type": "chunk",
+                    "content": chunk,
+                }
+                yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            error_data = {
+                "type": "error",
+                "message": f"스트리밍 중 오류 발생: {str(e)}",
+            }
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+            full_text = f"[오류 발생: {str(e)}]"
+
+        # 3) 완료 메시지 전송
+        session_ended = bool(
+            req.user_action in ("reset_save", "reset_drop")
+            or out_state.get("end_session") is True
+        )
+
+        persist_result = out_state.get("persist_result") or {}
+        save_result = None
+        if persist_result:
+            save_result = "ok" if persist_result.get("ok") else "error"
+
+        done_data = {
+            "type": "done",
+            "session_ended": session_ended,
+            "save_result": save_result,
+            "total_length": len(full_text),
+        }
+        yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Nginx 버퍼링 비활성화
+        },
     )

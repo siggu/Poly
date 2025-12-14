@@ -124,6 +124,10 @@ class EphemeralContextState(TypedDict, total=False):
     # ── Persist 결과 ────────────────────────────────────
     persist_result: PersistResult
 
+    # ── 스트리밍 관련 ───────────────────────────────────
+    streaming_mode: bool  # 스트리밍 모드 활성화 여부
+    streaming_context: Dict[str, Any]  # 스트리밍용 컨텍스트 (LLM 재생성용)
+
 
 
 # alias 편의를 위해 짧은 이름도 제공
