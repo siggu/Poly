@@ -4,12 +4,12 @@
     "userId": "test1234",
     "main_profile_id": 4,
     "created_at": "2025-12-08T01:54:01.941281+00:00",
-    "updated_at": "2025-12-08T02:47:58.039766+00:00",
+    "updated_at": "2025-12-14T07:23:38.911247+00:00",
     "id": 4,
     "name": "박옥자",
     "birth_date": "1990-01-01",
     "sex": "M",
-    "residency_sgg_code": "서울시 관악구",
+    "residency_sgg_code": "관악구",
     "median_income_ratio": 100.0,
     "insurance_type": "EMPLOYED",
     "basic_benefit_type": "NONE",
@@ -17,6 +17,6 @@
     "ltci_grade": "NONE",
     "pregnant_or_postpartum12m": true
   },
-  "auth_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0MTIzNCIsImV4cCI6MTc2NTE3MDI1MX0.o5WcAGP63smjw7AQpHKW1Gl6RBbFDPBRFZdqyS-QzjY",
+  "auth_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0MTIzNCIsImV4cCI6MTc2NTc4Mzg1MX0.fOtglAyaoUmZ3bn47FNySwg-hAphuNte-ClkEGUd_lA",
   "is_logged_in": true
 }

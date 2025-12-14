@@ -82,6 +82,25 @@ def _process_streaming_response():
         # 커스텀 HTML 스타일로 스트리밍 플레이스홀더 생성
         placeholder = st.empty()
 
+        # 먼저 로딩 인디케이터 표시
+        placeholder.markdown(
+            """
+            <div class="chat-message-assistant">
+                <div class="chat-avatar">AI</div>
+                <div style="flex: 1;">
+                    <div class="chat-bubble-assistant loading-skeleton">
+                        <div class="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         # 스트리밍 시작
         for event in backend_service.send_chat_message_stream(
             session_id=st.session_state.get("session_id"),
@@ -106,7 +125,7 @@ def _process_streaming_response():
                 chunk = event.get("content", "")
                 full_answer += chunk
 
-                # 기존 스타일과 동일한 HTML로 렌더링
+                # 같은 placeholder에서 답변 렌더링 (로딩 인디케이터를 대체)
                 placeholder.markdown(
                     f"""
                     <div class="chat-message-assistant">
