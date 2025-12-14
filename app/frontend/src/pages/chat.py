@@ -30,6 +30,7 @@ def _extract_policies_from_text(text: str):
 
 
 def handle_send_message(message: str):
+    """사용자 메시지를 추가하고 즉시 rerun하여 화면에 표시"""
     if not message.strip() or st.session_state.get("is_loading", False):
         return
 
@@ -43,7 +44,19 @@ def handle_send_message(message: str):
         st.session_state.messages = []
     st.session_state.messages.append(user_message)
 
+    # 로딩 상태 설정 및 즉시 rerun
     st.session_state["is_loading"] = True
+    st.session_state["pending_message"] = message
+    st.session_state["clear_user_input"] = True
+    st.rerun()
+
+
+def _process_streaming_response():
+    """스트리밍 답변 처리 - 채팅 메시지 영역 내부에서 실행"""
+    message = st.session_state.get("pending_message")
+    if not message:
+        st.session_state["is_loading"] = False
+        return
 
     # 🔥 활성 프로필 가져오기 - user_info의 main_profile_id 사용
     token = _get_auth_token()
@@ -64,7 +77,6 @@ def handle_send_message(message: str):
 
     try:
         # 스트리밍 방식으로 답변 생성
-        token = _get_auth_token()
         full_answer = ""
 
         # 커스텀 HTML 스타일로 스트리밍 플레이스홀더 생성
@@ -147,7 +159,7 @@ def handle_send_message(message: str):
         st.session_state.messages.append(error_message)
 
     st.session_state["is_loading"] = False
-    st.session_state["clear_user_input"] = True
+    st.session_state["pending_message"] = None
     st.rerun()
 
 
@@ -216,6 +228,11 @@ def render_chatbot_main():
                 # AI 메시지 종료
                 st.markdown("</div></div>", unsafe_allow_html=True)
                 st.markdown('<hr class="message-divider">', unsafe_allow_html=True)
+
+    # 🔥 스트리밍 처리 - 채팅 메시지 영역 내부에서 실행
+    if st.session_state.get("is_loading", False):
+        _process_streaming_response()
+
     st.markdown("</div>", unsafe_allow_html=True)
 
     # 추천 질문 (대화가 없을 때만 표시)
