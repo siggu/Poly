@@ -7,7 +7,7 @@ persist_pipeline.py
   1) Cleaner: 메시지 PII 마스킹 / no_store 정책 / 길이 제한
   2) Summarizer: rolling_summary + 메시지 기반 최종 요약 생성
   3) DiffMerger: ephemeral_profile / ephemeral_collection ↔ DB 병합
-  4) Vectorizer: dragonkue/bge-m3-ko 임베딩 생성
+  4) Vectorizer: OpenAI text-embedding-3-small 임베딩 생성 (1536차원)
   5) Persister: profiles / collections(트리플) / conversations / messages /
                 conversation_embeddings 를 하나의 트랜잭션으로 upsert/insert
 
@@ -36,14 +36,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import psycopg  # psycopg3
-from sentence_transformers import SentenceTransformer
+from openai import OpenAI
 
 from app.langgraph.utils.cleaner_utils import clean_messages
 from app.dao import db_user_utils
 
 
 # ─────────────────────────────────────────────────────────
-# 환경 변수 (Cleaner 기본값 및 DB / 임베딩 모델)
+# 환경 변수 (Cleaner 기본값 및 DB / OpenAI)
 # ─────────────────────────────────────────────────────────
 ENV_ENABLE = os.getenv("PERSIST_ENABLE_CLEANER", "true").lower() == "true"
 ENV_MODE: Literal["full", "mask-only", "off"] = os.getenv("PERSIST_CLEANER_MODE", "full").lower()
@@ -53,22 +53,23 @@ DB_URL = os.getenv("DATABASE_URL")
 if DB_URL and DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
 
-# 임베딩 모델 이름 (우선순위: CONV_EMB_MODEL > EMBEDDING_MODEL > 기본값)
-EMBED_MODEL_NAME = (
-    os.getenv("CONV_EMB_MODEL")
-    or os.getenv("EMBEDDING_MODEL")
-    or "dragonkue/bge-m3-ko"
-)
+# OpenAI 설정
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY not configured in .env")
+
+OPENAI_MODEL = "text-embedding-3-small"  # 1536차원
 
 # lazy 로딩용 전역
-_EMB_MODEL: Optional[SentenceTransformer] = None
+_openai_client: Optional[OpenAI] = None
 
 
-def _get_embedding_model() -> SentenceTransformer:
-    global _EMB_MODEL
-    if _EMB_MODEL is None:
-        _EMB_MODEL = SentenceTransformer(EMBED_MODEL_NAME)
-    return _EMB_MODEL
+def _get_openai_client() -> OpenAI:
+    """OpenAI 클라이언트 가져오기 또는 생성 (싱글톤)"""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
 
 
 def _now_iso() -> str:
@@ -140,26 +141,36 @@ def _summarize_session(rolling_summary: Optional[str], messages: List[Message]) 
 
 
 # ─────────────────────────────────────────────────────────
-# Vectorizer (dragonkue/bge-m3-ko 사용)
+# Vectorizer (OpenAI text-embedding-3-small 사용)
 # ─────────────────────────────────────────────────────────
 def _embed_chunks(text: str) -> List[Dict[str, Any]]:
     """
-    세션 요약 텍스트를 1개 chunk로 보고 dragonkue/bge-m3-ko 임베딩 생성.
+    세션 요약 텍스트를 1개 chunk로 보고 OpenAI text-embedding-3-small로 임베딩 생성.
     - 반환 형식: [{"chunk_id": str, "embedding": List[float]}]
-    - DB 스키마의 VECTOR 차원(CONV_EMB_DIM)과 모델 차원을 맞춰야 함.
+    - DB 스키마의 VECTOR 차원(1536)과 맞춤.
     """
     if not text:
         return []
 
-    model = _get_embedding_model()
-    # bge 계열 권장: normalize_embeddings=True (코사인 유사도 계산용)
-    vec = model.encode([text], normalize_embeddings=True)[0]
-    emb_list = vec.tolist()  # numpy.ndarray → list[float]
+    client = _get_openai_client()
 
-    return [{
-        "chunk_id": "full",
-        "embedding": emb_list,
-    }]
+    try:
+        # OpenAI API 호출
+        response = client.embeddings.create(
+            model=OPENAI_MODEL,
+            input=text.strip()
+        )
+        emb_list = response.data[0].embedding
+
+        return [{
+            "chunk_id": "full",
+            "embedding": emb_list,
+        }]
+
+    except Exception as e:
+        print(f"[persist_pipeline] OpenAI 임베딩 생성 오류: {e}")
+        # 오류 시 빈 리스트 반환 (임베딩 저장 건너뜀)
+        return []
 
 
 # ─────────────────────────────────────────────────────────
