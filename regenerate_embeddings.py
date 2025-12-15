@@ -2,26 +2,32 @@
 """
 regenerate_embeddings.py
 - documents 테이블은 유지하고 embeddings만 재생성
-- 환경 변수 EMBEDDING_MODEL 사용 (기본값: jhgan/ko-sroberta-multitask)
+- OpenAI text-embedding-3-small 모델 사용 (1536차원)
 """
 
 import os
 import sys
+import time
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import execute_values
-from sentence_transformers import SentenceTransformer
+from openai import OpenAI
 
 # 환경 변수 로드
 load_dotenv()
 
 # 설정
-EMB_DIM = 768
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "jhgan/ko-sroberta-multitask")
+EMB_DIM = 1536  # OpenAI text-embedding-3-small
+EMBEDDING_MODEL = "text-embedding-3-small"
 DB_URL = os.getenv("DATABASE_URL")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not DB_URL:
     print("❌ DATABASE_URL 환경 변수가 설정되지 않았습니다.")
+    sys.exit(1)
+
+if not OPENAI_API_KEY:
+    print("❌ OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
     sys.exit(1)
 
 def build_vector_literal(vec, dim=EMB_DIM):
@@ -36,23 +42,61 @@ def build_vector_literal(vec, dim=EMB_DIM):
     return "[" + ",".join(parts) + "]"
 
 
-def get_embedding(text, model):
-    """텍스트를 임베딩 벡터로 변환"""
+def get_embedding(text, client):
+    """OpenAI API를 사용하여 텍스트를 임베딩 벡터로 변환"""
     if not text or not str(text).strip():
         return None
-    vec = model.encode(str(text).strip(), normalize_embeddings=True)
-    return vec.tolist() if hasattr(vec, "tolist") else list(vec)
+
+    try:
+        response = client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=str(text).strip()
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"\n⚠️  임베딩 생성 오류: {e}")
+        return None
+
+
+def get_embeddings_batch(texts, client):
+    """배치로 여러 텍스트의 임베딩을 한 번에 생성 (API 호출 최적화)"""
+    if not texts:
+        return []
+
+    # 빈 텍스트 필터링
+    valid_texts = [(i, text) for i, text in enumerate(texts) if text and str(text).strip()]
+
+    if not valid_texts:
+        return [None] * len(texts)
+
+    try:
+        # OpenAI API는 배치 처리 지원
+        response = client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=[str(text).strip() for _, text in valid_texts]
+        )
+
+        # 결과를 원래 순서에 맞게 매핑
+        results = [None] * len(texts)
+        for j, (i, _) in enumerate(valid_texts):
+            results[i] = response.data[j].embedding
+
+        return results
+    except Exception as e:
+        print(f"\n⚠️  배치 임베딩 생성 오류: {e}")
+        return [None] * len(texts)
 
 
 def main():
-    print(f"📌 임베딩 모델: {EMBEDDING_MODEL}")
+    print(f"📌 임베딩 모델: OpenAI {EMBEDDING_MODEL}")
     print(f"📌 임베딩 차원: {EMB_DIM}")
     print(f"📌 DB URL: {DB_URL[:50]}...")
 
-    # 모델 로드
-    print(f"\n⏳ 모델 로딩 중: {EMBEDDING_MODEL}")
-    model = SentenceTransformer(EMBEDDING_MODEL)
-    print(f"✅ 모델 로드 완료!")
+    # OpenAI 클라이언트 초기화
+    print(f"\n⏳ OpenAI 클라이언트 초기화 중...")
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    print(f"✅ OpenAI 클라이언트 준비 완료!")
+
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
 
@@ -79,42 +123,61 @@ def main():
             ORDER BY id
         """)
 
-        batch_size = 100
-        batch = []
+        all_docs = cur.fetchall()
+        batch_size = 50  # OpenAI API 배치 크기 (너무 크면 타임아웃 위험)
+        db_batch = []
         processed = 0
         bar_length = 40
 
         print("\n진행 상황:")
         print("=" * 60)
 
-        for row in cur.fetchall():
+        # API 배치 처리를 위한 임시 저장소
+        api_batch_texts = []
+        api_batch_meta = []  # (doc_id, field_name)
+
+        for row in all_docs:
             doc_id, title, requirements, benefits = row
 
-            # title, requirements, benefits에 대해 임베딩 생성
+            # title, requirements, benefits를 배치에 추가
             for field_name, text in [
                 ("title", title),
                 ("requirements", requirements),
                 ("benefits", benefits),
             ]:
                 if text and str(text).strip():
-                    vec = get_embedding(text, model)
+                    api_batch_texts.append(text)
+                    api_batch_meta.append((doc_id, field_name))
+
+            # API 배치가 충분히 쌓이면 한 번에 처리
+            if len(api_batch_texts) >= batch_size:
+                embeddings = get_embeddings_batch(api_batch_texts, client)
+
+                for (doc_id, field_name), vec in zip(api_batch_meta, embeddings):
                     if vec:
                         lit = build_vector_literal(vec, EMB_DIM)
                         if lit:
-                            batch.append((doc_id, field_name, lit))
+                            db_batch.append((doc_id, field_name, lit))
+
+                # DB에 삽입
+                if db_batch:
+                    execute_values(
+                        cur,
+                        "INSERT INTO embeddings (doc_id, field, embedding) VALUES %s",
+                        db_batch,
+                        template="(%s, %s, %s::vector)",
+                    )
+                    conn.commit()
+                    db_batch = []
+
+                # 배치 초기화
+                api_batch_texts = []
+                api_batch_meta = []
+
+                # Rate limiting
+                time.sleep(0.1)
 
             processed += 1
-
-            # 배치 단위로 삽입
-            if len(batch) >= batch_size:
-                execute_values(
-                    cur,
-                    "INSERT INTO embeddings (doc_id, field, embedding) VALUES %s",
-                    batch,
-                    template="(%s, %s, %s::vector)",
-                )
-                conn.commit()
-                batch = []
 
             # 진행률 표시
             percent = (processed / total_docs) * 100
@@ -125,12 +188,22 @@ def main():
             )
             sys.stdout.flush()
 
-        # 남은 배치 처리
-        if batch:
+        # 남은 API 배치 처리
+        if api_batch_texts:
+            embeddings = get_embeddings_batch(api_batch_texts, client)
+
+            for (doc_id, field_name), vec in zip(api_batch_meta, embeddings):
+                if vec:
+                    lit = build_vector_literal(vec, EMB_DIM)
+                    if lit:
+                        db_batch.append((doc_id, field_name, lit))
+
+        # 남은 DB 배치 처리
+        if db_batch:
             execute_values(
                 cur,
                 "INSERT INTO embeddings (doc_id, field, embedding) VALUES %s",
-                batch,
+                db_batch,
                 template="(%s, %s, %s::vector)",
             )
             conn.commit()
