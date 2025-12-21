@@ -611,6 +611,11 @@ def _hybrid_search_documents(
             cur.execute(sql, params)
             rows = cur.fetchall()
     db_elapsed = time.time() - db_start
+
+    # 성능 모니터링: 0.1초(100ms) 이상이면 경고
+    if db_elapsed > 0.1:
+        print(f"🔴 [SLOW DB QUERY] {db_elapsed:.2f}s (expected <0.1s) - Connection pool 상태 확인 필요", flush=True)
+
     print(f"🔍 [DB Query] {db_elapsed:.2f}s, returned {len(rows)} rows", flush=True)
 
     # 4) 결과 가공 → rag_snippets 포맷

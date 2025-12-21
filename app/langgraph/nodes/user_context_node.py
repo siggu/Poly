@@ -311,6 +311,39 @@ def _summarize(old_summary: Optional[str], messages: List[Dict[str, Any]]) -> st
 # -------------------------------------------------------------------
 # 메인 노드 함수
 # -------------------------------------------------------------------
+
+def _prune_ephemeral_collection(eph_collection: Any, max_triples: int = 100) -> Dict[str, Any]:
+    """
+    ephemeral_collection의 triples 개수를 제한하여 State 크기 폭증 방지.
+
+    Args:
+        eph_collection: ephemeral_collection (dict 또는 기타)
+        max_triples: 최대 보존할 triples 개수 (기본 100개)
+
+    Returns:
+        pruned collection (최근 max_triples개만 유지)
+    """
+    if not eph_collection:
+        return {"triples": []}
+
+    # dict 형태로 normalize
+    if isinstance(eph_collection, dict):
+        triples = list(eph_collection.get("triples") or [])
+    elif isinstance(eph_collection, list):
+        triples = list(eph_collection)
+    else:
+        triples = []
+
+    # 개수 확인 및 pruning
+    original_count = len(triples)
+    if original_count > max_triples:
+        # 최근 max_triples개만 유지 (FIFO)
+        triples = triples[-max_triples:]
+        print(f"  ⚠️  [Collection Pruning] {original_count} → {max_triples} triples (메모리 최적화)", flush=True)
+
+    return {"triples": triples}
+
+
 def _normalize_collection_layer(raw: Any) -> Dict[str, Any]:
     """
     컬렉션 레이어용 보정 함수.
@@ -366,6 +399,10 @@ def user_context_node(state: State) -> State:
     # 2) ephemeral과 merge (ephemeral 우선)
     eph_profile = state.get("ephemeral_profile")
     eph_collection = state.get("ephemeral_collection")
+
+    # 2-0) ephemeral_collection pruning (State 크기 폭증 방지)
+    eph_collection = _prune_ephemeral_collection(eph_collection, max_triples=100)
+    state["ephemeral_collection"] = eph_collection  # pruned 결과를 state에 다시 저장
 
     merged_profile = merge_profile(eph_profile, db_profile)
     merged_collection = merge_collection(eph_collection, db_collection)
