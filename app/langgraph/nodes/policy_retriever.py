@@ -108,8 +108,11 @@ def _get_connection_pool() -> ConnectionPool:
             min_size=2,  # 항상 2개 연결 유지
             max_size=10,  # 최대 10개 동시 연결
             timeout=30,
+            max_lifetime=300,  # 5분마다 연결 재활용 (stale connection 방지)
+            max_idle=60,  # 60초 유휴 연결 종료
+            reconnect_timeout=10,  # 재연결 타임아웃
         )
-        print("  ✅ [DB Pool] 연결 풀 초기화 완료 (2-10개 연결)", flush=True)
+        print("  ✅ [DB Pool] 연결 풀 초기화 완료 (2-10개 연결, 5분 재활용)", flush=True)
     return _connection_pool
 
 
@@ -576,11 +579,11 @@ def _hybrid_search_documents(
             FROM embeddings e
             JOIN documents d ON d.id = e.doc_id
             WHERE e.field = 'title'
-              AND d.region ILIKE %(region)s
+              AND d.region = %(region)s
             ORDER BY e.embedding <=> %(qvec)s::vector
             LIMIT %(limit)s
         """
-        params = {"qvec": qvec_str, "region": f"%{region_filter}%", "limit": top_k}
+        params = {"qvec": qvec_str, "region": region_filter, "limit": top_k}
     else:
         # region 필터 없을 때: 단순 벡터 검색 (인덱스 사용)
         sql = """
