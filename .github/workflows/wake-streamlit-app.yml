@@ -28,7 +28,7 @@ jobs:
 
       - name: Wake up Streamlit app
         env:
-          STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
+          POLY_STREAMLIT_APP_URL: ${{ secrets.POLY_STREAMLIT_APP_URL }}
         run: |
           python wake_app.py
 
