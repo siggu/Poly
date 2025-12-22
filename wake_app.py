@@ -2,7 +2,9 @@
 Streamlit 앱을 자동으로 깨우는 스크립트
 GitHub Actions에서 정기적으로 실행하여 앱이 sleep 모드에 들어가는 것을 방지합니다.
 """
+
 import os
+import sys
 import time
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -13,7 +15,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # Streamlit 앱 URL 설정 (GitHub Secrets에서 가져오거나 여기에 직접 입력)
-STREAMLIT_APP_URL = os.getenv("STREAMLIT_APP_URL", "YOUR_STREAMLIT_APP_URL_HERE")
+STREAMLIT_APP_URL = os.getenv("POLY_STREAMLIT_APP_URL", "").strip()
+
 
 def wake_streamlit_app():
     """Streamlit 앱을 방문하고 필요시 깨우기 버튼을 클릭"""
@@ -45,7 +48,9 @@ def wake_streamlit_app():
             # "Yes, get this app back up!" 버튼 찾기
             wait = WebDriverWait(driver, 10)
             wake_button = wait.until(
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Yes, get this app back up!')]"))
+                EC.presence_of_element_located(
+                    (By.XPATH, "//*[contains(text(), 'Yes, get this app back up!')]")
+                )
             )
 
             print("😴 앱이 sleep 상태입니다. 깨우기 버튼 클릭 중...")
@@ -55,7 +60,7 @@ def wake_streamlit_app():
             time.sleep(10)
             print("✅ 앱을 성공적으로 깨웠습니다!")
 
-        except Exception as e:
+        except Exception:
             # 버튼이 없으면 이미 활성 상태
             print("✅ 앱이 이미 활성 상태입니다!")
 
@@ -75,11 +80,25 @@ def wake_streamlit_app():
             driver.quit()
             print("🔚 브라우저 종료")
 
-if __name__ == "__main__":
-    if STREAMLIT_APP_URL == "YOUR_STREAMLIT_APP_URL_HERE":
-        print("⚠️  경고: STREAMLIT_APP_URL을 설정해주세요!")
-        print("GitHub Secrets에 'STREAMLIT_APP_URL'을 추가하거나")
-        print("wake_app.py 파일의 STREAMLIT_APP_URL 변수를 수정하세요.")
-        exit(1)
 
+if __name__ == "__main__":
+    # URL 유효성 검증
+    if not STREAMLIT_APP_URL:
+        print("❌ 오류: STREAMLIT_APP_URL이 비어있습니다!")
+        print("GitHub Secrets에 'STREAMLIT_APP_URL'을 추가해주세요.")
+        print("")
+        print("설정 방법:")
+        print("1. GitHub 저장소 → Settings → Secrets and variables → Actions")
+        print("2. 'New repository secret' 클릭")
+        print("3. Name: STREAMLIT_APP_URL")
+        print("4. Secret: https://your-app.streamlit.app")
+        sys.exit(1)
+
+    if not STREAMLIT_APP_URL.startswith("http"):
+        print(f"❌ 오류: 잘못된 URL 형식입니다: '{STREAMLIT_APP_URL}'")
+        print("URL은 'https://'로 시작해야 합니다.")
+        print("예시: https://your-app.streamlit.app")
+        sys.exit(1)
+
+    print("✓ URL 검증 완료")
     wake_streamlit_app()
