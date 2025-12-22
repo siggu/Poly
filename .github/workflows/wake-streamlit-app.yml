@@ -1,0 +1,42 @@
+name: Wake Streamlit App
+
+# 4시간마다 자동 실행 및 수동 실행 지원
+on:
+  schedule:
+    # 매 4시간마다 실행 (UTC 기준: 0시, 4시, 8시, 12시, 16시, 20시)
+    - cron: '0 */4 * * *'
+
+  # 수동 실행 트리거
+  workflow_dispatch:
+
+jobs:
+  wake-app:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install selenium webdriver-manager
+
+      - name: Wake up Streamlit app
+        env:
+          STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
+        run: |
+          python wake_app.py
+
+      - name: Upload screenshot (if available)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamlit-app-screenshot-${{ github.run_number }}
+          path: streamlit_app_status.png
+          if-no-files-found: ignore
+          retention-days: 7
