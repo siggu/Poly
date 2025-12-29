@@ -1,6 +1,16 @@
 [server]
 headless = true
 port = 8501
+maxUploadSize = 5
+maxMessageSize = 5
+enableXsrfProtection = true
+enableCORS = false
 
 [browser]
 gatherUsageStats = false
+
+[runner]
+fastReruns = true
+
+[global]
+developmentMode = false

@@ -58,9 +58,9 @@ if DB_URL.startswith("postgresql+psycopg://"):
 # -------------------------------------------------------------------
 # Retriever tunable parameters
 # -------------------------------------------------------------------
-# ⚡ 성능 최적화: 검색 문서 수를 줄여서 처리 시간 단축
-RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "12"))  # 24 → 12
-CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "8"))  # 24 → 8
+# ⚡ 성능/메모리 최적화: 검색 문서 수를 줄여서 처리 시간 단축 + 메모리 절약
+RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "8"))  # 12 → 8 (1GB RAM 최적화)
+CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "5"))  # 8 → 5 (1GB RAM 최적화)
 SIMILARITY_FLOOR = float(os.getenv("POLICY_RETRIEVER_SIM_FLOOR", "0.3"))
 MIN_CANDIDATES_AFTER_FLOOR = int(os.getenv("POLICY_RETRIEVER_MIN_AFTER_FLOOR", "5"))
 BM25_WEIGHT = float(os.getenv("POLICY_RETRIEVER_BM25_WEIGHT", "0.2"))  # 0.35 → 0.2
@@ -81,7 +81,7 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY not configured in .env")
 
 OPENAI_MODEL = "text-embedding-3-small"  # 1536차원
-EMBEDDING_CACHE_SIZE = 100  # 최대 캐시 개수
+EMBEDDING_CACHE_SIZE = 30  # 최대 캐시 개수 (메모리 최적화)
 
 # 전역 상태
 _openai_client: Optional[OpenAI] = None
@@ -105,14 +105,16 @@ def _get_connection_pool() -> ConnectionPool:
     if _connection_pool is None:
         _connection_pool = ConnectionPool(
             conninfo=DB_URL,
-            min_size=2,  # 항상 2개 연결 유지
-            max_size=10,  # 최대 10개 동시 연결
+            min_size=1,  # 최소 1개 연결 유지 (메모리 최적화)
+            max_size=3,  # 최대 3개 동시 연결 (메모리 최적화)
             timeout=30,
             max_lifetime=300,  # 5분마다 연결 재활용 (stale connection 방지)
             max_idle=60,  # 60초 유휴 연결 종료
             reconnect_timeout=10,  # 재연결 타임아웃
         )
-        print("  ✅ [DB Pool] 연결 풀 초기화 완료 (2-10개 연결, 5분 재활용)", flush=True)
+        print(
+            "  ✅ [DB Pool] 연결 풀 초기화 완료 (1-3개 연결, 5분 재활용)", flush=True
+        )
     return _connection_pool
 
 
@@ -136,13 +138,16 @@ def _embed_text(text: str) -> List[float]:
 
     # 1. 캐시 키 생성
     cache_start = time.time()
-    cache_key = hashlib.md5(text_to_embed.encode('utf-8')).hexdigest()
+    cache_key = hashlib.md5(text_to_embed.encode("utf-8")).hexdigest()
 
     # 2. 캐시 조회
     global _embedding_cache, _cache_order
     if cache_key in _embedding_cache:
         cache_elapsed = time.time() - cache_start
-        print(f"  ✅ [캐시 HIT] {cache_elapsed:.4f}s, key: {cache_key[:8]}..., text_len: {len(text_to_embed)} chars", flush=True)
+        print(
+            f"  ✅ [캐시 HIT] {cache_elapsed:.4f}s, key: {cache_key[:8]}..., text_len: {len(text_to_embed)} chars",
+            flush=True,
+        )
         return _embedding_cache[cache_key]
 
     cache_elapsed = time.time() - cache_start
@@ -152,13 +157,13 @@ def _embed_text(text: str) -> List[float]:
     api_start = time.time()
     try:
         client = _get_openai_client()
-        response = client.embeddings.create(
-            model=OPENAI_MODEL,
-            input=text_to_embed
-        )
+        response = client.embeddings.create(model=OPENAI_MODEL, input=text_to_embed)
         embedding = response.data[0].embedding
         api_elapsed = time.time() - api_start
-        print(f"  🔍 [OpenAI API] {api_elapsed:.2f}s, text_len: {len(text_to_embed)} chars", flush=True)
+        print(
+            f"  🔍 [OpenAI API] {api_elapsed:.2f}s, text_len: {len(text_to_embed)} chars",
+            flush=True,
+        )
 
         # 4. 캐시 저장 (FIFO 방식)
         _embedding_cache[cache_key] = embedding
@@ -168,7 +173,10 @@ def _embed_text(text: str) -> List[float]:
         if len(_cache_order) > EMBEDDING_CACHE_SIZE:
             oldest_key = _cache_order.pop(0)
             _embedding_cache.pop(oldest_key, None)
-            print(f"  🗑️  [캐시] 가장 오래된 항목 제거 (캐시 크기: {len(_embedding_cache)})", flush=True)
+            print(
+                f"  🗑️  [캐시] 가장 오래된 항목 제거 (캐시 크기: {len(_embedding_cache)})",
+                flush=True,
+            )
 
         return embedding
 
@@ -549,6 +557,7 @@ def _hybrid_search_documents(
 
     # 🔍 타이밍 측정 시작
     import time
+
     func_start = time.time()
 
     # 2) 임베딩 계산 (정책 요청용 텍스트)
@@ -614,7 +623,10 @@ def _hybrid_search_documents(
 
     # 성능 모니터링: 0.1초(100ms) 이상이면 경고
     if db_elapsed > 0.1:
-        print(f"🔴 [SLOW DB QUERY] {db_elapsed:.2f}s (expected <0.1s) - Connection pool 상태 확인 필요", flush=True)
+        print(
+            f"🔴 [SLOW DB QUERY] {db_elapsed:.2f}s (expected <0.1s) - Connection pool 상태 확인 필요",
+            flush=True,
+        )
 
     print(f"🔍 [DB Query] {db_elapsed:.2f}s, returned {len(rows)} rows", flush=True)
 
