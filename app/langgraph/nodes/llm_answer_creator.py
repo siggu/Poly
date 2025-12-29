@@ -7,67 +7,23 @@ from __future__ import annotations
 
 import json
 import os
+import time  # 🔥 추가: 타이밍 측정용
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
-# import google.generativeai as genai
 
 from app.langgraph.state.ephemeral_context import State as GraphState, Message
 
 load_dotenv()
 
-# Gemini API 설정
-# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gpt-4o-mini")
 
 # ───────────────────────────────────────────────────────────
 # 시스템 프롬프트
 # ───────────────────────────────────────────────────────────
-# SYSTEM_PROMPT = """
-# 당신의 임무는 RetrievalPlanner로부터 전달된 문서 목록만을 사용하여 답변하는 것입니다.
-# 규칙:
-# - 전달된 문서들만 출력합니다.
-# - 전달되지 않은 문서는 생성하거나 가정하지 않습니다.
-# - 전달된 문서가 6개면 6개 모두 출력하고,
-#   전달된 문서가 1개면 1개만 출력합니다.
-# - 사용자가 자격이 되는 지원사업만 이미 필터링된 상태로 전달됩니다.
-# - 당신은 추가적인 자격 판단을 하지 않습니다.
-# - 문서에 있는 요건 및 내용을 기반으로 요약하여 안내합니다.
-# - 답변 마지막에 출처 URL을 포함합니다.
-# """
-
-# SYSTEM_PROMPT = """
-# 당신의 임무는 RetrievalPlanner로부터 전달된 문서 목록만을 사용하여 답변하는 것입니다.
-
-# 규칙(절대 준수):
-# - 전달된 문서들만 출력합니다.
-# - 전달되지 않은 문서는 생성하거나 추론하지 않습니다.
-# - 전달된 document 개수만큼 정확히 같은 개수를 출력합니다.
-# - 이미 RetrievalPlanner에서 자격 필터링이 완료된 상태이므로 추가 자격 판단을 하지 않습니다.
-
-# 출력 형식(강제):
-# 각 문서는 아래 형식을 그대로 사용하여 출력합니다:
-
-# {문서번호}. {title}
-# - 지원 내용: 문서의 "benefits" 또는 snippet 기반으로 요약
-# - 지원 자격: 문서의 "requirements" 기반으로 요약
-# - 신청 방법: 문서에 존재하면 요약, 없으면 링크 참조
-# - 링크: {url}
-
-# 주의:
-# - 링크는 각 문서마다 딱 한 번만 출력합니다.
-# - 마지막에 전체 URL 목록을 다시 나열하지 않습니다.
-# - 지원 내용/자격/신청방법이 문서에 없으면 "제공된 문서에 해당 정보가 없습니다."라고 명시합니다.
-# - 문서 순서는 전달받은 순서를 유지합니다.
-
-# 답변 전체 구조:
-# 1) 간단한 한 줄 결론
-# 2) 위 출력 형식에 따라 문서들을 나열
-# 3) 추가 안내(필요한 경우만)
-# """
 SYSTEM_PROMPT = """
 당신은 의료·복지 지원 정책 안내 상담사입니다.
 
@@ -103,6 +59,7 @@ SYSTEM_PROMPT = """
 # 컨텍스트 요약/서식화
 # ───────────────────────────────────────────────────────────
 
+
 def _format_profile_ctx(p: Optional[Dict[str, Any]]) -> str:
     if not p or "error" in p:
         return ""
@@ -126,7 +83,7 @@ def _format_profile_ctx(p: Optional[Dict[str, Any]]) -> str:
         except:
             lines.append(f"- 중위소득 비율: {mir_raw}")
 
-    if (bb := p.get("basic_benefit_type")):
+    if bb := p.get("basic_benefit_type"):
         lines.append(f"- 기초생활보장: {bb}")
 
     if (dg := p.get("disability_grade")) is not None:
@@ -213,18 +170,22 @@ def _build_user_prompt(
     if doc_block:
         lines.append("\n[RAG 문서 스니펫]\n" + doc_block)
 
-    lines.append("""
+    lines.append(
+        """
 요구 출력:
 - 맨 앞에 **결론 한 문장**
 - 다음에 근거(위 컨텍스트에서만 인용)
 - 마지막에 다음 단계(증빙, 추가 확인, 신청 경로)를 간단히
 - 추정 금지, 컨텍스트 밖 사실 금지
-""")
+"""
+    )
     return "\n".join(lines)
 
+
 # ───────────────────────────────────────────────────────────
-# Gemini LLM 호출
+# LLM 호출 (일반 모드)
 # ───────────────────────────────────────────────────────────
+
 
 def run_answer_llm(
     input_text: str,
@@ -234,7 +195,11 @@ def run_answer_llm(
     summary: Optional[str] = None,
     documents: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
+    # 🔥 타이밍 측정 시작
+    total_start = time.time()
 
+    # 프롬프트 구성
+    prompt_start = time.time()
     user_prompt = _build_user_prompt(
         input_text,
         used,
@@ -243,26 +208,47 @@ def run_answer_llm(
         summary=summary,
         documents=documents,
     )
+    prompt_elapsed = time.time() - prompt_start
 
-    # OpenAI 메시지 구성
+    # 프롬프트 크기 로그
+    prompt_len = len(user_prompt)
+    print(
+        f"📝 [LLM] 프롬프트 구성: {prompt_elapsed:.3f}s, 길이: {prompt_len} chars",
+        flush=True,
+    )
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
 
     try:
-        # OpenAI ChatCompletion 호출
+        # 🔥 API 호출 타이밍
+        api_start = time.time()
         resp = client.chat.completions.create(
             model=ANSWER_MODEL,
             messages=messages,
             temperature=0.3,
-            timeout=15.0,  # 타임아웃 설정
+            timeout=60.0,  # 타임아웃 60초로 증가
         )
+        api_elapsed = time.time() - api_start
 
-        return resp.choices[0].message.content.strip()
+        result = resp.choices[0].message.content.strip()
+        result_len = len(result)
+
+        # 🔥 총 소요 시간 로그
+        total_elapsed = time.time() - total_start
+        print(
+            f"✅ [LLM] API 호출: {api_elapsed:.2f}s, 응답 길이: {result_len} chars",
+            flush=True,
+        )
+        print(f"✅ [LLM] 총 소요시간: {total_elapsed:.2f}s", flush=True)
+
+        return result
 
     except Exception as e:
-        print("🔥🔥 [OpenAI ERROR]", e)
+        total_elapsed = time.time() - total_start
+        print(f"🔥 [LLM ERROR] {total_elapsed:.2f}s 후 에러 발생: {e}", flush=True)
         raise
 
 
@@ -276,8 +262,12 @@ def run_answer_llm_stream(
 ):
     """
     스트리밍 방식으로 LLM 응답을 생성합니다.
-    제너레이터를 반환하여 청크 단위로 텍스트를 yield합니다.
     """
+    # 🔥 타이밍 측정 시작
+    total_start = time.time()
+
+    # 프롬프트 구성
+    prompt_start = time.time()
     user_prompt = _build_user_prompt(
         input_text,
         used,
@@ -286,36 +276,67 @@ def run_answer_llm_stream(
         summary=summary,
         documents=documents,
     )
+    prompt_elapsed = time.time() - prompt_start
+    prompt_len = len(user_prompt)
+    print(
+        f"📝 [LLM Stream] 프롬프트 구성: {prompt_elapsed:.3f}s, 길이: {prompt_len} chars",
+        flush=True,
+    )
 
-    # OpenAI 메시지 구성
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
 
     try:
-        # OpenAI ChatCompletion 스트리밍 호출
+        # 🔥 API 호출 타이밍
+        api_start = time.time()
+        first_chunk_time = None
+        chunk_count = 0
+        total_chars = 0
+
         stream = client.chat.completions.create(
             model=ANSWER_MODEL,
             messages=messages,
             temperature=0.3,
-            timeout=15.0,
-            stream=True,  # 스트리밍 활성화
+            timeout=60.0,  # 타임아웃 60초로 증가
+            stream=True,
         )
 
-        # 청크 단위로 yield
         for chunk in stream:
             if chunk.choices[0].delta.content is not None:
-                yield chunk.choices[0].delta.content
+                content = chunk.choices[0].delta.content
+                chunk_count += 1
+                total_chars += len(content)
+
+                # 🔥 첫 번째 청크 시간 기록
+                if first_chunk_time is None:
+                    first_chunk_time = time.time() - api_start
+                    print(
+                        f"⚡ [LLM Stream] 첫 토큰 도착: {first_chunk_time:.2f}s",
+                        flush=True,
+                    )
+
+                yield content
+
+        # 🔥 스트리밍 완료 로그
+        total_elapsed = time.time() - total_start
+        api_elapsed = time.time() - api_start
+        print(
+            f"✅ [LLM Stream] 완료: API {api_elapsed:.2f}s, 총 {total_elapsed:.2f}s, {chunk_count} chunks, {total_chars} chars",
+            flush=True,
+        )
 
     except Exception as e:
-        print("🔥🔥 [OpenAI STREAM ERROR]", e)
+        total_elapsed = time.time() - total_start
+        print(f"🔥 [LLM Stream ERROR] {total_elapsed:.2f}s 후 에러: {e}", flush=True)
         yield f"\n\n[오류 발생: {str(e)}]"
 
 
 # ───────────────────────────────────────────────────────────
 # 메시지 컨텍스트 추출
 # ───────────────────────────────────────────────────────────
+
 
 def _extract_context_from_messages(messages: List[Message]) -> Dict[str, Any]:
     for msg in reversed(messages or []):
@@ -364,6 +385,7 @@ def _safe_json(value: Any, limit: int = 400) -> str:
 # Fallback 메시지
 # ───────────────────────────────────────────────────────────
 
+
 def _build_fallback_text(
     used: str,
     profile_ctx: Any,
@@ -387,7 +409,12 @@ def _build_fallback_text(
 # 메인 answer 노드
 # ───────────────────────────────────────────────────────────
 
+
 def answer(state: GraphState) -> Dict[str, Any]:
+    # 🔥 노드 전체 타이밍
+    node_start = time.time()
+    print(f"🚀 [answer_llm 노드] 시작", flush=True)
+
     messages: List[Message] = list(state.get("messages") or [])
     retrieval = state.get("retrieval") or {}
     ctx = _extract_context_from_messages(messages)
@@ -406,22 +433,19 @@ def answer(state: GraphState) -> Dict[str, Any]:
     summary = ctx.get("summary") or state.get("rolling_summary")
 
     input_text = (
-        (state.get("user_input") or state.get("input_text") or "").strip()
-        or _last_user_content(messages).strip()
-    )
+        state.get("user_input") or state.get("input_text") or ""
+    ).strip() or _last_user_content(messages).strip()
 
     used = (retrieval.get("used") or "").strip().upper()
     if not used:
         used = _infer_used_flag(profile_ctx, collection_ctx_list, documents)
 
-    # 스트리밍 모드인 경우 LLM 호출 스킵 (API 레벨에서 처리)
     streaming_mode = state.get("streaming_mode", False)
 
     if streaming_mode:
-        # 스트리밍 모드: 컨텍스트만 저장하고 답변 생성은 스킵
-        text = ""  # 빈 텍스트
+        text = ""
+        print(f"⏭️  [answer_llm 노드] 스트리밍 모드 - LLM 호출 스킵", flush=True)
     else:
-        # 일반 모드: LLM 호출하여 답변 생성
         try:
             text = run_answer_llm(
                 input_text,
@@ -461,6 +485,10 @@ def answer(state: GraphState) -> Dict[str, Any]:
         },
     }
 
+    # 🔥 노드 완료 로그
+    node_elapsed = time.time() - node_start
+    print(f"✅ [answer_llm 노드] 완료: {node_elapsed:.2f}s", flush=True)
+
     return {
         "answer": {
             "text": text,
@@ -468,7 +496,6 @@ def answer(state: GraphState) -> Dict[str, Any]:
             "used": used,
         },
         "messages": [assistant_message],
-        # 스트리밍용 컨텍스트 저장
         "streaming_context": {
             "input_text": input_text,
             "used": used,
