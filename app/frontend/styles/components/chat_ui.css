@@ -1,4 +1,9 @@
-/* 챗봇 UI 스타일 */
+/* ===================================
+   챗봇 UI 스타일
+   - 반응형 디자인
+   - 다크모드 지원
+   =================================== */
+
 .chat-header {
     display: flex;
     align-items: center;
@@ -15,11 +20,12 @@
     font-size: 28px;
     font-weight: 600;
     margin-bottom: 10px;
+    color: var(--text-primary, #333);
 }
 
 .chat-title-section p {
     font-size: 16px;
-    color: #666;
+    color: var(--text-secondary, #666);
 }
 
 .suggested-questions-header {
@@ -30,6 +36,7 @@
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 12px;
+    color: var(--text-primary, #333);
 }
 
 .disclaimer {
@@ -39,20 +46,20 @@
 
 .disclaimer p {
     font-size: 11px;
-    color: #999;
+    color: var(--text-muted, #999);
 }
 
-/* 11.18 추가: 입력창 컨테이너 */
+/* 입력창 컨테이너 */
 .chat-input-container {
     position: sticky;
     bottom: 0;
-    background: white;
+    background: var(--main-bg, white);
     padding: 20px 0;
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--border-color, #f0f0f0);
     z-index: 100;
 }
 
-/* 11.18추가: 대화 저장/초기화 버튼 */
+/* 대화 저장/초기화 버튼 */
 .chat-controls {
     display: flex;
     gap: 12px;
@@ -63,23 +70,80 @@
     flex: 1;
     padding: 12px;
     border-radius: 8px;
-    border: 1px solid #e0e0e0;
-    background: white;
+    border: 1px solid var(--border-color, #e0e0e0);
+    background: var(--card-bg, white);
+    color: var(--text-primary, #333);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
     font-size: 14px;
 }
 
 .chat-control-btn:hover {
-    background: #f5f5f5;
-    border-color: #FF6B6B;
-
+    background: var(--chat-action-hover-bg, #f5f5f5);
+    border-color: var(--accent-color, #FF6B6B);
 }
-/* 11. 18 추가: 확인 다이얼로그 */
+
+.chat-control-btn:active {
+    transform: scale(0.98);
+}
+
+/* 확인 다이얼로그 */
 .confirmation-dialog {
     background: #fff3cd;
     border: 1px solid #ffc107;
     border-radius: 8px;
     padding: 16px;
     margin: 20px 0;
+}
+
+/* 반응형 - 모바일 */
+@media screen and (max-width: 768px) {
+    .chat-title-section {
+        margin: 24px 0;
+    }
+
+    .chat-title-section h1 {
+        font-size: 22px;
+    }
+
+    .chat-title-section p {
+        font-size: 14px;
+    }
+
+    .suggested-questions-header {
+        margin: 20px 0 16px 0;
+    }
+
+    .chat-input-container {
+        padding: 16px 0;
+    }
+
+    .chat-controls {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .chat-control-btn {
+        padding: 10px;
+        font-size: 13px;
+    }
+}
+
+/* 반응형 - 소형 모바일 */
+@media screen and (max-width: 480px) {
+    .chat-title-section {
+        margin: 16px 0;
+    }
+
+    .chat-title-section h1 {
+        font-size: 20px;
+    }
+
+    .chat-title-section p {
+        font-size: 13px;
+    }
+
+    .disclaimer p {
+        font-size: 10px;
+    }
 }
