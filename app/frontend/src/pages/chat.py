@@ -261,20 +261,22 @@ def render_chatbot_main():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # 추천 질문 (대화가 없고, 로딩 중이 아닐 때만 표시)
+    # 추천 질문 (대화가 없을 때만 텍스트로 표시)
     is_loading = st.session_state.get("is_loading", False)
     if not st.session_state.get("messages") and not is_loading:
-        render_template("components/suggested_questions_header.html")
-        cols = st.columns(2)
-        for idx, question in enumerate(SUGGESTED_QUESTIONS):
-            with cols[idx % 2]:
-                if st.button(
-                    question,
-                    key=f"suggest_{idx}",
-                    use_container_width=True,
-                    type="secondary",
-                ):
-                    handle_send_message(question)
+        questions_html = " ".join(
+            f'<span style="background-color: #f5f5f5; padding: 6px 12px; border-radius: 16px; font-size: 14px; color: #555;">{q}</span>'
+            for q in SUGGESTED_QUESTIONS
+        )
+        st.markdown(
+            f"""
+            <div style="margin: 30px 0 20px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <span style="font-size: 14px; font-weight: 600; color: #333;">추천 질문:</span>
+                {questions_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
 
