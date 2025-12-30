@@ -38,6 +38,85 @@ st.set_page_config(
 load_css("custom.css")
 
 
+def apply_font_size_css():
+    """글자 크기 설정에 따라 동적 CSS를 적용합니다."""
+    font_size = st.session_state.get("font_size", "medium")
+
+    # 글자 크기별 CSS 변수 설정
+    font_sizes = {
+        "small": {
+            "base": "13px",
+            "chat": "13px",
+            "title": "24px",
+            "subtitle": "14px",
+        },
+        "medium": {
+            "base": "15px",
+            "chat": "15px",
+            "title": "28px",
+            "subtitle": "16px",
+        },
+        "large": {
+            "base": "17px",
+            "chat": "17px",
+            "title": "32px",
+            "subtitle": "18px",
+        },
+    }
+
+    sizes = font_sizes.get(font_size, font_sizes["medium"])
+
+    st.markdown(
+        f"""
+        <style>
+        /* 글자 크기 설정: {font_size} */
+        :root {{
+            --font-size-base: {sizes["base"]};
+            --font-size-chat: {sizes["chat"]};
+            --font-size-title: {sizes["title"]};
+            --font-size-subtitle: {sizes["subtitle"]};
+        }}
+
+        /* 전체 기본 폰트 크기 */
+        .stApp, .main, [data-testid="stAppViewContainer"] {{
+            font-size: {sizes["base"]} !important;
+        }}
+
+        /* 채팅 메시지 */
+        .chat-bubble-user p,
+        .chat-bubble-assistant p {{
+            font-size: {sizes["chat"]} !important;
+        }}
+
+        /* 제목 */
+        .chat-title-section h1 {{
+            font-size: {sizes["title"]} !important;
+        }}
+
+        .chat-title-section p {{
+            font-size: {sizes["subtitle"]} !important;
+        }}
+
+        /* 입력 필드 */
+        .stTextInput input {{
+            font-size: {sizes["base"]} !important;
+        }}
+
+        /* 버튼 */
+        .stButton button {{
+            font-size: {sizes["base"]} !important;
+        }}
+
+        /* 사이드바 */
+        [data-testid="stSidebar"] {{
+            font-size: {sizes["base"]} !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # ==============================================================================
 # 1. 상태 초기화 (st.session_state)
 # ==============================================================================
@@ -212,6 +291,9 @@ def main_app():
     import logging
 
     logger = logging.getLogger(__name__)
+
+    # 글자 크기 CSS 적용
+    apply_font_size_css()
 
     # 사이드바 네비게이션 숨기기
     st.markdown(
