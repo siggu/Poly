@@ -87,13 +87,11 @@ def _process_streaming_response():
             """
             <div class="chat-message-assistant">
                 <div class="chat-avatar">AI</div>
-                <div style="flex: 1;">
-                    <div class="chat-bubble-assistant loading-skeleton">
-                        <div class="typing-indicator">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
+                <div class="chat-bubble-assistant loading-skeleton">
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
                     </div>
                 </div>
             </div>
@@ -130,10 +128,8 @@ def _process_streaming_response():
                     f"""
                     <div class="chat-message-assistant">
                         <div class="chat-avatar">AI</div>
-                        <div style="flex: 1;">
-                            <div class="chat-bubble-assistant">
-                                <p>{full_answer}▌</p>
-                            </div>
+                        <div class="chat-bubble-assistant">
+                            <p>{full_answer}▌</p>
                         </div>
                     </div>
                     """,
@@ -150,20 +146,30 @@ def _process_streaming_response():
                 full_answer = f"죄송합니다. 오류가 발생했습니다: {error_msg}"
                 break
 
-        # 플레이스홀더 제거 (rerun 시 session_state에서 렌더링됨)
-        placeholder.empty()
+        # 최종 메시지를 placeholder에 표시 (커서 없이) - 깜빡임 방지
+        final_display = full_answer if full_answer else "응답을 받지 못했습니다."
+        placeholder.markdown(
+            f"""
+            <div class="chat-message-assistant">
+                <div class="chat-avatar">AI</div>
+                <div class="chat-bubble-assistant">
+                    <p>{final_display}</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         # 최종 메시지를 session_state에 저장
-        final_content = full_answer if full_answer else "응답을 받지 못했습니다."
         assistant_message = {
             "id": str(uuid.uuid4()),
             "role": "assistant",
-            "content": final_content,
+            "content": final_display,
             "timestamp": time.time(),
         }
 
         # 정책 추출
-        policies = _extract_policies_from_text(final_content)
+        policies = _extract_policies_from_text(final_display)
         if policies:
             assistant_message["policies"] = policies
 
@@ -227,10 +233,9 @@ def render_chatbot_main():
                     f"""
                     <div class="chat-message-assistant">
                         <div class="chat-avatar">AI</div>
-                        <div style="flex: 1;">
-                            <div class="chat-bubble-assistant">
-                                <p>{message["content"]}</p>
-                            </div>
+                        <div class="chat-bubble-assistant">
+                            <p>{message["content"]}</p>
+                        </div>
                 """,
                     unsafe_allow_html=True,
                 )
@@ -245,7 +250,7 @@ def render_chatbot_main():
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 # AI 메시지 종료
-                st.markdown("</div></div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
                 st.markdown('<hr class="message-divider">', unsafe_allow_html=True)
 
     # 🔥 스트리밍 처리 - 채팅 메시지 영역 내부에서 실행
