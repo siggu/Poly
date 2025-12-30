@@ -199,11 +199,12 @@ def render_chatbot_main():
         st.session_state["user_input"] = ""
         st.session_state["clear_user_input"] = False
 
+    is_loading_header = st.session_state.get("is_loading", False)
     col_header_left, col_header_right = st.columns([8, 1])
     with col_header_left:
         render_template("components/chat_header.html")
     with col_header_right:
-        if st.button("👤", key="btn_my_page", help="마이페이지"):
+        if st.button("👤", key="btn_my_page", help="마이페이지", disabled=is_loading_header):
             st.session_state["show_profile"] = True
             st.rerun()
 
@@ -263,6 +264,7 @@ def render_chatbot_main():
     if not st.session_state.get("messages"):
         render_template("components/suggested_questions_header.html")
         cols = st.columns(2)
+        is_loading = st.session_state.get("is_loading", False)
         for idx, question in enumerate(SUGGESTED_QUESTIONS):
             with cols[idx % 2]:
                 if st.button(
@@ -270,12 +272,14 @@ def render_chatbot_main():
                     key=f"suggest_{idx}",
                     use_container_width=True,
                     type="secondary",
+                    disabled=is_loading,
                 ):
                     handle_send_message(question)
 
     st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
 
     # 입력창
+    is_loading = st.session_state.get("is_loading", False)
     with st.form(key="chat_input_form", clear_on_submit=True):
         col_input, col_send = st.columns([9, 1])
         with col_input:
@@ -283,10 +287,13 @@ def render_chatbot_main():
                 "정책에 대해 질문해주세요...",
                 key="user_input",
                 label_visibility="collapsed",
-                placeholder="메시지를 입력하세요...",
+                placeholder="답변 생성 중..." if is_loading else "메시지를 입력하세요...",
+                disabled=is_loading,
             )
         with col_send:
-            submitted = st.form_submit_button("✈️", use_container_width=True)
+            submitted = st.form_submit_button(
+                "✈️", use_container_width=True, disabled=is_loading
+            )
 
         if submitted and user_input.strip():
             handle_send_message(user_input)
@@ -301,7 +308,7 @@ def render_chatbot_main():
         )
         col1, col2, col3 = st.columns([1.5, 1.5, 1])
         with col1:
-            if st.button("💾 저장하고 초기화", use_container_width=True):
+            if st.button("💾 저장하고 초기화", use_container_width=True, disabled=is_loading):
                 token = _get_auth_token()
                 if token:
                     # 🔥 user_info에서 profile_id 가져오기
@@ -326,7 +333,7 @@ def render_chatbot_main():
                 st.session_state.save_chat_confirmation = False
                 st.rerun()
         with col2:
-            if st.button("🗑️ 저장하지 않고 초기화", use_container_width=True):
+            if st.button("🗑️ 저장하지 않고 초기화", use_container_width=True, disabled=is_loading):
                 # 백엔드에 reset_drop 액션 전송 (저장 없이 초기화)
                 token = _get_auth_token()
                 if token:
@@ -349,13 +356,13 @@ def render_chatbot_main():
                 st.session_state.save_chat_confirmation = False
                 st.rerun()
         with col3:
-            if st.button("취소", use_container_width=True):
+            if st.button("취소", use_container_width=True, disabled=is_loading):
                 st.session_state.save_chat_confirmation = False
                 st.rerun()
     else:
         col_save, col_reset = st.columns(2)
         with col_save:
-            if st.button("💾 대화 저장", use_container_width=True):
+            if st.button("💾 대화 저장", use_container_width=True, disabled=is_loading):
                 token = _get_auth_token()
                 if token:
                     # 🔥 user_info에서 profile_id 가져오기
@@ -378,7 +385,7 @@ def render_chatbot_main():
                     st.warning("로그인이 필요합니다.")
 
         with col_reset:
-            if st.button("🔄 초기화", use_container_width=True):
+            if st.button("🔄 초기화", use_container_width=True, disabled=is_loading):
                 if len(st.session_state.get("messages", [])) > 1:
                     st.session_state.save_chat_confirmation = True
                     st.rerun()
