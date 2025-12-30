@@ -14,22 +14,17 @@ import re
 
 
 def api_check_id_availability(user_id: str) -> Tuple[bool, str]:
-    """아이디 중복 확인 (DB 조회)"""
+    """아이디 중복 확인 (형식 검증 + DB 조회)"""
     if not user_id or not user_id.strip():
         return False, "아이디를 입력해주세요"
     user_id = user_id.strip()
-    # 아이디 형식 검증 (영문, 숫자만 허용, 4-20자)
 
+    # 아이디 형식 검증 (영문, 숫자만 허용, 4-20자)
     if not re.match(r"^[a-zA-Z0-9]{4,20}$", user_id):
         return False, "아이디는 영문, 숫자 조합 4-20자로 입력해주세요"
-    # 예약어 체크
-    # reserved_ids = ["admin", "root", "system", "guest"]
-    # if user_id.lower() in reserved_ids:
-    #     return False, "사용할 수 없는 아이디입니다"
 
-    # TODO: 백엔드에 아이디 중복 확인 API를 만들고 호출해야 합니다.
-    # 현재는 임시로 True를 반환합니다.
-    return True, "사용 가능한 아이디 형식입니다."
+    # 백엔드 API를 통한 실제 중복 확인
+    return backend_service.check_id_availability(user_id)
 
 
 GENDER_OPTIONS = ["남성", "여성"]
@@ -227,12 +222,6 @@ def render_signup_tab():
                     st.error(msg)
             else:
                 st.warning("아이디를 입력해주세요.")
-
-    # 아이디 중복 확인 결과 표시
-    if st.session_state.get("is_id_available") is False:
-        st.error("사용 불가능한 아이디입니다.")
-    elif st.session_state.get("is_id_available") is True:
-        st.success("사용 가능한 아이디입니다.")
 
     # 회원가입 폼 시작
     with st.form("signup_form"):

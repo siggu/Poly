@@ -175,22 +175,65 @@ class BackendService:
         """회원가입 API를 호출합니다."""
         url = f"{FASTAPI_BASE_URL}/api/v1/user/register"
 
-        # 11.18 수정: 빈 문자열 값을 None으로 변환하여 백엔드로 전송
-        # 이렇게 해야 DB에 NULL로 저장되어 의도치 않은 기본값 설정을 방지할 수 있습니다.
-        payload = {}
-        for key, value in user_data.items():
-            payload[key] = value if value != "" else None
+        # 프론트엔드 필드명 → 백엔드 필드명 매핑
+        gender_map = {"남성": "M", "여성": "F"}
+        insurance_map = {
+            "직장": "EMPLOYED",
+            "지역": "REGIONAL",
+            "피부양": "DEPENDENT",
+            "의료급여": "MEDICAL",
+        }
+        livelihood_map = {
+            "없음": "NONE",
+            "생계": "LIVELIHOOD",
+            "의료": "MEDICAL",
+            "주거": "HOUSING",
+            "교육": "EDUCATION",
+        }
+        pregnancy_map = {"없음": "false", "임신중": "true", "출산후12개월이내": "true"}
 
-        # 필수 필드는 payload에 다시 한 번 확실하게 할당합니다.
-        payload["username"] = user_data.get("username")
-        payload["name"] = user_data.get("name")
-        payload["password"] = user_data.get("password")
-
-        # median_income_ratio는 0이 유효한 값이므로 빈 문자열일 때만 None으로 처리
-        if user_data.get("median_income_ratio") == "":
-            payload["median_income_ratio"] = None
+        # incomeLevel 처리 (문자열 → float 변환)
+        income_level = user_data.get("incomeLevel")
+        if income_level and income_level != "":
+            try:
+                income_level = float(income_level)
+            except (ValueError, TypeError):
+                income_level = None
         else:
-            payload["median_income_ratio"] = user_data.get("median_income_ratio")
+            income_level = None
+
+        # birthDate 처리 (date 객체 → 문자열 변환)
+        birth_date = user_data.get("birthDate")
+        if birth_date and hasattr(birth_date, "strftime"):
+            birth_date = birth_date.strftime("%Y-%m-%d")
+        elif birth_date:
+            birth_date = str(birth_date)
+        else:
+            birth_date = None
+
+        payload = {
+            "username": user_data.get("userId") or user_data.get("username"),
+            "password": user_data.get("password"),
+            "name": user_data.get("name"),
+            "birth_date": birth_date,
+            "sex": gender_map.get(user_data.get("gender"), user_data.get("gender")),
+            "residency_sgg_code": user_data.get("location") or None,
+            "insurance_type": insurance_map.get(
+                user_data.get("healthInsurance"), user_data.get("healthInsurance")
+            ),
+            "median_income_ratio": income_level,
+            "basic_benefit_type": livelihood_map.get(
+                user_data.get("basicLivelihood"), user_data.get("basicLivelihood")
+            ),
+            "disability_grade": user_data.get("disabilityLevel") or None,
+            "ltci_grade": user_data.get("longTermCare") or None,
+            "pregnant_or_postpartum12m": pregnancy_map.get(
+                user_data.get("pregnancyStatus"), "false"
+            ),
+        }
+
+        # None 값 제거 (백엔드에서 Optional 필드 처리)
+        payload = {k: v for k, v in payload.items() if v is not None}
         # ===========================================================================
         try:
             response = requests.post(url, json=payload, timeout=10)
