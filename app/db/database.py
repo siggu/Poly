@@ -682,26 +682,48 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             return False
 
 
-def delete_profile_by_id(profile_id: int) -> bool:
-    """프로필 ID를 사용하여 프로필을 삭제합니다."""
+def delete_profile_by_id(profile_id: int, user_uuid: str = None) -> Tuple[bool, str]:
+    """프로필 ID를 사용하여 프로필을 삭제합니다. user_uuid가 제공되면 소유권 확인."""
     with get_db_connection() as conn:
         if conn is None:
-            return False
+            return False, "DB 연결 실패"
         try:
             with conn.cursor() as cur:
-                # main_profile_id가 이 프로필을 가리키고 있으면 NULL로 설정됨 (ON DELETE SET NULL)
+                # 소유권 확인 (user_uuid가 제공된 경우)
+                if user_uuid:
+                    cur.execute(
+                        "SELECT user_id FROM profiles WHERE id = %s", (profile_id,)
+                    )
+                    result = cur.fetchone()
+                    if not result:
+                        return False, "프로필을 찾을 수 없습니다."
+                    if str(result[0]) != str(user_uuid):
+                        return False, "해당 프로필에 대한 삭제 권한이 없습니다."
+
+                # main_profile_id가 이 프로필을 가리키고 있으면 NULL로 설정
+                cur.execute(
+                    "UPDATE users SET main_profile_id = NULL WHERE main_profile_id = %s",
+                    (profile_id,)
+                )
+
+                # 프로필에 연결된 collections 삭제
+                cur.execute(
+                    "DELETE FROM collections WHERE profile_id = %s", (profile_id,)
+                )
+
+                # 프로필 삭제
                 cur.execute("DELETE FROM profiles WHERE id = %s", (profile_id,))
 
                 if cur.rowcount == 0:
                     conn.rollback()
-                    return False
+                    return False, "프로필을 찾을 수 없습니다."
 
                 conn.commit()
-                return True
+                return True, "프로필이 성공적으로 삭제되었습니다."
         except Exception as e:
             conn.rollback()
             logger.error(f"delete_profile_by_id 오류: {e}")
-            return False
+            return False, f"프로필 삭제 중 오류가 발생했습니다: {e}"
 
 
 def update_user_main_profile_id(
