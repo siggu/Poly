@@ -3,7 +3,9 @@
 # app/frontend/src/pages/chat.py
 import uuid
 import time
+import json
 import streamlit as st
+from streamlit_javascript import st_javascript
 from src.widgets.policy_card import render_policy_card
 from src.utils.template_loader import render_template, load_css
 from src.backend_service import backend_service
@@ -188,9 +190,47 @@ def _process_streaming_response():
     st.rerun()
 
 
+def _save_to_localstorage():
+    """현재 대화 내용을 localStorage에 저장"""
+    messages = st.session_state.get("messages", [])
+    session_id = st.session_state.get("session_id")
+    if messages:
+        data = json.dumps({"messages": messages, "session_id": session_id})
+        # JavaScript 문자열 이스케이프
+        escaped_data = data.replace("\\", "\\\\").replace("'", "\\'")
+        st_javascript(f"localStorage.setItem('poly_chat_data', '{escaped_data}')")
+
+
+def _load_from_localstorage():
+    """localStorage에서 대화 내용 복원"""
+    # 이미 메시지가 있으면 스킵 (중복 로드 방지)
+    if st.session_state.get("messages"):
+        return
+
+    # localStorage에서 데이터 가져오기
+    saved_data = st_javascript("localStorage.getItem('poly_chat_data')")
+
+    if saved_data and isinstance(saved_data, str):
+        try:
+            data = json.loads(saved_data)
+            if data.get("messages"):
+                st.session_state["messages"] = data["messages"]
+                st.session_state["session_id"] = data.get("session_id")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+
 def render_chatbot_main():
     load_css("components/chat_messages.css")
     load_css("components/chat_ui.css")
+
+    # localStorage 클리어 플래그 처리
+    if st.session_state.get("clear_localstorage"):
+        st_javascript("localStorage.removeItem('poly_chat_data')")
+        st.session_state["clear_localstorage"] = False
+    else:
+        # localStorage에서 대화 내용 복원
+        _load_from_localstorage()
 
     if "save_chat_confirmation" not in st.session_state:
         st.session_state.save_chat_confirmation = False
@@ -340,6 +380,7 @@ def render_chatbot_main():
                 st.session_state.messages = []
                 st.session_state.session_id = None  # 세션 ID 초기화
                 st.session_state.save_chat_confirmation = False
+                st.session_state["clear_localstorage"] = True  # localStorage 클리어 플래그
                 st.rerun()
         with col2:
             if st.button("🗑️ 저장하지 않고 초기화", use_container_width=True):
@@ -363,6 +404,7 @@ def render_chatbot_main():
                 st.session_state.messages = []
                 st.session_state.session_id = None  # 세션 ID 초기화
                 st.session_state.save_chat_confirmation = False
+                st.session_state["clear_localstorage"] = True  # localStorage 클리어 플래그
                 st.rerun()
         with col3:
             if st.button("취소", use_container_width=True):
@@ -400,3 +442,6 @@ def render_chatbot_main():
                     st.rerun()
                 else:
                     st.toast("초기화할 대화 내용이 없습니다.")
+
+    # 🔥 대화 내용이 있으면 localStorage에 저장
+    _save_to_localstorage()
