@@ -13,15 +13,7 @@ def initialize_session_state():
         "is_logged_in": False,
         "current_profile": {},  # {'id': ..., 'name': ...}
         "show_login_modal": False,
-        "messages": [
-            {
-                "id": str(uuid.uuid4()),
-                "role": "assistant",
-                "content": """ 안녕하세요! 정책 추천 챗봇입니다. 
-            나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.""",
-                "timestamp": time.time(),
-            }
-        ],
+        "messages": [],
         "input": "",
         "is_loading": False,
         "search_query": "",
@@ -57,15 +49,7 @@ def initialize_session_state():
 
 def reset_chat_session():
     """채팅 세션을 재설정"""
-    st.session_state["messages"] = [
-        {
-            "id": str(uuid.uuid4()),
-            "role": "assistant",
-            "content": """ 안녕하세요! 정책 추천 챗봇입니다. 
-            나이, 거주지, 관심 분야를 알려주시면 맞춤형 정책을 추천해드립니다.""",
-            "timestamp": time.time(),
-        }
-    ]
+    st.session_state["messages"] = []
     st.session_state["input"] = ""
     st.session_state["is_loading"] = False
 

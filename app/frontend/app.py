@@ -216,14 +216,6 @@ def render_error_message(error_type: str, message: str, on_action_click=None):
 # 4. 메인 앱 실행 로직 (Application Flow)
 # ==============================================================================
 
-SUGGESTED_QUESTIONS = [
-    "청년 주거 지원 정책이 궁금해요",
-    "취업 지원 프로그램 알려주세요",
-    "창업 지원금 신청 방법은?",
-    "육아 지원 혜택 찾아주세요",
-]
-
-
 # --- ⭐ 프로필 전환 리팩토링: `current_profile_id` 기준으로 로드 ---
 def load_user_profiles_from_backend(token: str) -> bool:
     """백엔드에서 사용자 정보와 모든 프로필을 로드하고 `current_profile_id`를 설정합니다."""
