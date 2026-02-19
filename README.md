@@ -89,7 +89,7 @@
 
 |                                               **임베딩 모델**                                                |                     |                               **벡터 데이터베이스**                                |          |
 | :----------------------------------------------------------------------------------------------------------: | :-----------------: | :--------------------------------------------------------------------------------: | :------: |
-| <img src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.svg" width="60px" /> | dragonkue/bge-m3-ko | <img src="https://www.svgrepo.com/show/303301/postgresql-logo.svg" width="60px" /> | PGVector |
+| <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQTSfTVLipQtEnTIPH-Z9LrFKUdE2C6CRJ3OQ&s" width="60px" /> | text-embedding-3-small | <img src="https://www.svgrepo.com/show/303301/postgresql-logo.svg" width="60px" /> | PGVector |
 
 </br>
 
