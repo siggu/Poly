@@ -60,7 +60,11 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = "pr-medical-chatbot"
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
 
-    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
+    model_config = {
+        "env_file": [".env", "../.env"],  # app/ 또는 프로젝트 루트 어디서 실행해도 동작
+        "case_sensitive": True,
+        "extra": "ignore",
+    }
 
 
 settings = Settings()
