@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Github/Poly/app/langgraph -type f -name *.py)",
+      "Bash(wc -l /c/Github/Poly/app/**/*.py)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"from sentence_transformers\\\\|from transformers\\\\|import torch\" /c/Github/Poly --include=*.py)",
+      "Bash(grep -r \"dydantic\\\\|filetype\\\\|google-ai-generativelanguage\\\\|google-api-python-client\" /c/Github/Poly --include=*.py)",
+      "Bash(where git:*)",
+      "Bash(git --version)",
+      "Bash(rm -rf c:/Github/Poly/app/dbconn)",
+      "Bash(rm -f c:/Github/Poly/app/db/.user_repository.py.swp)",
+      "Bash(rm -f c:/Github/Poly/app/db/user_repository.py)",
+      "Bash(rm -rf c:/Github/Poly/app/chunking)",
+      "Bash(rm -rf c:/Github/Poly/app/embedding)",
+      "Bash(python -m py_compile app/config.py)",
+      "Bash(python -m py_compile app/auth.py)",
+      "Bash(python -m py_compile app/main.py)",
+      "Bash(python -m py_compile app/db/config.py)",
+      "Bash(python -m py_compile app/db/db_core.py)",
+      "Bash(python -m py_compile app/agents/new_pipeline.py)",
+      "Bash(python -m py_compile app/langgraph/nodes/session_orchestrator.py)",
+      "Bash(python -m py_compile app/langgraph/nodes/query_router.py)",
+      "Bash(python -m py_compile app/langgraph/nodes/info_extractor.py)",
+      "Bash(python -m py_compile app/langgraph/nodes/llm_answer_creator.py)",
+      "Bash(python -m py_compile app/db/enums.py)",
+      "Bash(python -m py_compile app/schemas.py)",
+      "Bash(python -m py_compile app/db/database.py)",
+      "Bash(python -m py_compile app/langgraph/utils/openai_client.py)",
+      "Bash(python -m py_compile app/langgraph/utils/time_utils.py)",
+      "Bash(python -m py_compile app/langgraph/utils/cleaner_utils.py)",
+      "Bash(python -m py_compile app/langgraph/nodes/persist_pipeline.py)",
+      "Bash(python -m py_compile app/langgraph/nodes/policy_retriever.py)",
+      "Bash(python -m py_compile app/api/v1/user.py)",
+      "Bash(python -m py_compile app/frontend/src/state_manager.py)",
+      "Bash(python -m py_compile app/frontend/app.py)",
+      "Bash(python -m py_compile app/frontend/src/pages/my_page.py)",
+      "Bash(python -m py_compile app/frontend/src/widgets/sidebar.py)",
+      "Bash(python -m py_compile app/api/v1/chat.py)"
+    ]
+  }
+}

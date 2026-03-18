@@ -1,72 +1,24 @@
-"""Database interaction 모듈: 사용자 인증, 계정 관리, 프로필 관리 기능 포함. 11.14수정"""
+"""Database interaction 모듈: 사용자 인증, 계정 관리, 프로필 관리 기능 포함."""
 
 import psycopg2
 import psycopg2.extras
-import os
 import uuid
 from typing import Optional, Dict, List, Tuple, Any
 import logging
 
-# import datetime
-from contextlib import contextmanager
-from dotenv import load_dotenv
-from urllib.parse import urlparse
+from app.db.db_core import get_db_context
+from app.db.enums import (
+    GENDER_TO_DB, INSURANCE_TO_DB, BENEFIT_TO_DB,
+    DISABILITY_TO_DB, DISABILITY_FROM_DB,
+)
 
-# .env 파일에서 환경 변수 로드
-load_dotenv()
-
-# 로깅 설정
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL:
-    # asyncpg 프로토콜 제거 (psycopg2는 postgresql:// 사용)
-    db_url = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
-    parsed = urlparse(db_url)
-    
-    DB_NAME = parsed.path[1:]  # '/team02' -> 'team02'
-    DB_USER = parsed.username
-    DB_PASSWORD = parsed.password
-    DB_HOST = parsed.hostname
-    DB_PORT = parsed.port
-else:
-    # ⚠️ 폴백: 개별 환경변수 사용
-    DB_NAME = os.getenv("DB_NAME")
-    DB_USER = os.getenv("DB_USER")
-    DB_PASSWORD = os.getenv("DB_PASSWORD")
-    DB_HOST = os.getenv("DB_HOST")
-    DB_PORT = os.getenv("DB_PORT")
-
-# 디버깅 로그
-logger.info(f"🔗 DB 연결 설정: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
-
-# 매핑 딕셔너리
-GENDER_MAPPING = {
-    "남성": "M",
-    "여성": "F",
-}
-
-HEALTH_INSURANCE_MAPPING = {
-    "직장": "EMPLOYED",
-    "지역": "LOCAL",
-    "피부양": "DEPENDENT",
-    "의료급여": "MEDICAL_AID_1",
-}
-
-BASIC_LIVELIHOOD_MAPPING = {
-    "없음": "NONE",
-    "생계": "LIVELIHOOD",
-    "의료": "MEDICAL",
-    "주거": "HOUSING",
-    "교육": "EDUCATION",
-}
-# 11.17 저녁에 추가
-DISABILITY_GRADE_MAP_DB_TO_FE = {
-    0: "미등록",
-    1: "심한 장애",
-    2: "심하지 않은 장애",
-}
+# 하위 호환용 별칭
+GENDER_MAPPING = GENDER_TO_DB
+HEALTH_INSURANCE_MAPPING = INSURANCE_TO_DB
+BASIC_LIVELIHOOD_MAPPING = BENEFIT_TO_DB
+DISABILITY_GRADE_MAP_DB_TO_FE = DISABILITY_FROM_DB
 
 
 # ==============================================================================
@@ -74,45 +26,10 @@ DISABILITY_GRADE_MAP_DB_TO_FE = {
 # ==============================================================================
 
 
-@contextmanager
-def get_db_connection():
-    """데이터베이스 연결 컨텍스트 매니저."""
-    conn = None
-    try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT,
-        )
-        yield conn
-    except psycopg2.OperationalError as e:
-        logger.error(f"PostgreSQL 연결 실패: {e}")
-        yield None  # 연결 실패 시 None 반환
-    except Exception as e:
-        logger.error(f"데이터베이스 오류: {e}")
-        yield None
-    finally:
-        if conn:
-            conn.close()
-
-
 def get_db():
     """FastAPI 의존성 주입을 위한 DB 세션 생성기"""
-    conn = None
-    try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT,
-        )
+    with get_db_context() as conn:
         yield conn
-    finally:
-        if conn:
-            conn.close()
 
 
 def initialize_db():
@@ -120,7 +37,7 @@ def initialize_db():
     DB에 'users' 및 'profiles' 테이블이 없으면 생성합니다.
     주의: 실제 운영 DB는 이미 다른 스키마로 생성되어 있으므로 이 함수는 참고용입니다.
     """
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             logger.error("DB 초기화 실패: 연결할 수 없습니다.")
             return
@@ -193,7 +110,7 @@ def initialize_db():
 
 def check_user_exists(username: str) -> bool:
     """아이디(username)를 사용하여 사용자 존재 여부를 확인합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False
         try:
@@ -207,7 +124,7 @@ def check_user_exists(username: str) -> bool:
 
 def get_user_password_hash(username: str) -> Optional[str]:
     """아이디(username)를 사용하여 저장된 비밀번호 해시를 가져옵니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return None
         try:
@@ -224,7 +141,7 @@ def get_user_password_hash(username: str) -> Optional[str]:
 
 def get_user_uuid_by_username(username: str) -> Optional[str]:
     """아이디(username)를 사용하여 UUID를 가져옵니다 (로그인 성공 시 사용)."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return None
         try:
@@ -247,7 +164,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
 
     new_uuid_str = str(uuid.uuid4())
 
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, "DB 연결 실패."
 
@@ -374,7 +291,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
 
 def update_user_password(user_uuid: str, new_password_hash: str) -> Tuple[bool, str]:
     """사용자 비밀번호 해시를 업데이트합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, "DB 연결 실패."
         try:
@@ -400,24 +317,24 @@ def delete_user_account(user_id: str) -> Tuple[bool, str]:
 
     try:
         # with 문으로 context manager 사용
-        with get_db_connection() as conn:
+        with get_db_context() as conn:
             with conn.cursor() as cursor:
                 # UUID를 문자열로 유지 (psycopg2가 자동 변환)
-                print(f"[DEBUG] Starting delete for user_id: {user_id}")
+                logger.debug("Starting delete for user_id: %s", user_id)
 
                 # 디버깅: 현재 프로필 확인
                 cursor.execute(
                     "SELECT id, user_id FROM profiles WHERE user_id = %s", (user_id,)
                 )
                 profiles = cursor.fetchall()
-                print(f"[DEBUG] Found profiles: {profiles}")
+                logger.debug("Found profiles: %s", profiles)
 
                 # 0. users.main_profile_id를 NULL로 설정
                 cursor.execute(
                     "UPDATE users SET main_profile_id = NULL WHERE id = %s", (user_id,)
                 )
                 updated_users = cursor.rowcount
-                print(f"[DEBUG] Updated main_profile_id to NULL: {updated_users} users")
+                logger.debug("Updated main_profile_id to NULL: %d users", updated_users)
 
                 # 1. collections 삭제
                 cursor.execute(
@@ -430,39 +347,36 @@ def delete_user_account(user_id: str) -> Tuple[bool, str]:
                     (user_id,),
                 )
                 deleted_collections = cursor.rowcount
-                print(f"[DEBUG] Deleted collections: {deleted_collections}")
+                logger.debug("Deleted collections: %d", deleted_collections)
 
                 # 2. profiles 삭제
                 cursor.execute("DELETE FROM profiles WHERE user_id = %s", (user_id,))
                 deleted_profiles = cursor.rowcount
-                print(f"[DEBUG] Deleted profiles: {deleted_profiles}")
+                logger.debug("Deleted profiles: %d", deleted_profiles)
 
                 # 디버깅: 삭제 후 프로필 확인
                 cursor.execute(
                     "SELECT id, user_id FROM profiles WHERE user_id = %s", (user_id,)
                 )
                 remaining_profiles = cursor.fetchall()
-                print(f"[DEBUG] Remaining profiles after delete: {remaining_profiles}")
+                logger.debug("Remaining profiles after delete: %s", remaining_profiles)
 
                 # 3. users 삭제
                 cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
                 deleted_users = cursor.rowcount
-                print(f"[DEBUG] Deleted users: {deleted_users}")
+                logger.debug("Deleted users: %d", deleted_users)
 
                 conn.commit()
 
                 if deleted_users > 0:
-                    print(f"[DEBUG] 회원 탈퇴 완료 (user_id: {user_id})")
+                    logger.info("회원 탈퇴 완료 (user_id: %s)", user_id)
                     return True, "회원 탈퇴가 완료되었습니다."
                 else:
-                    print(f"[DEBUG] 사용자를 찾을 수 없음 (user_id: {user_id})")
+                    logger.warning("사용자를 찾을 수 없음 (user_id: %s)", user_id)
                     return False, "사용자를 찾을 수 없습니다."
 
     except Exception as e:
-        print(f"delete_user_account 오류: {e}")
-        import traceback
-
-        print(traceback.format_exc())
+        logger.error("delete_user_account 오류: %s", e, exc_info=True)
         return False, f"회원 탈퇴 처리 중 오류가 발생했습니다: {str(e)}"
 
 
@@ -474,7 +388,7 @@ def delete_user_account(user_id: str) -> Tuple[bool, str]:
 # 11.18 수정: 사용자 및 메인 프로필 조회 시 DB 원본 데이터 반환
 def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """사용자 UUID로 사용자 정보와 메인 프로필 정보를 조회합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, None
         try:
@@ -538,7 +452,7 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str,
 # 11.18 수정: 프로필 목록 조회 시 DB 원본 데이터 반환
 def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, Any]]]:
     """사용자의 모든 프로필 목록을 조회합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, []
         try:
@@ -560,7 +474,7 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
 # 11.18 수정: 프로필 추가 시 프론트엔드 필드명을 DB 필드명으로 변환
 def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int]:
     """새로운 프로필을 추가합니다. 성공 시 프로필 ID를 반환합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, 0
         try:
@@ -609,7 +523,7 @@ def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int
 
 def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
     """기존 프로필 정보를 업데이트합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False
         try:
@@ -684,7 +598,7 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
 
 def delete_profile_by_id(profile_id: int, user_uuid: str = None) -> Tuple[bool, str]:
     """프로필 ID를 사용하여 프로필을 삭제합니다. user_uuid가 제공되면 소유권 확인."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, "DB 연결 실패"
         try:
@@ -730,7 +644,7 @@ def update_user_main_profile_id(
     user_uuid: str, profile_id: Optional[int]
 ) -> Tuple[bool, str]:
     """사용자의 메인 프로필 ID를 업데이트합니다."""
-    with get_db_connection() as conn:
+    with get_db_context() as conn:
         if conn is None:
             return False, "DB 연결 실패."
         try:
@@ -756,4 +670,4 @@ def update_user_main_profile_id(
 
 if __name__ == "__main__":
     initialize_db()
-    print("데이터베이스 초기화 완료.")
+    logger.info("데이터베이스 초기화 완료.")

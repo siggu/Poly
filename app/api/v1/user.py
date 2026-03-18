@@ -1,12 +1,8 @@
 """User & Auth 관련 API 엔드포인트 -11.18(리프레시 토큰 수정, 프로필 필드명 변환 적용)"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
-# from datetime import datetime, timezone
-from typing import Any
 from passlib.context import CryptContext
 
-from app.db.database import get_db
 from app.auth import create_access_token, create_refresh_token, get_current_user
 from app.db import database as db_ops
 from app.schemas import (
@@ -82,7 +78,7 @@ def get_current_active_user(
 @router.post(
     "/register", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED
 )
-async def register_user(user_data: UserCreate, db: Any = Depends(get_db)):
+async def register_user(user_data: UserCreate):
     """회원가입"""
     if db_ops.check_user_exists(user_data.username):
         raise HTTPException(
@@ -105,7 +101,7 @@ async def register_user(user_data: UserCreate, db: Any = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token, summary="사용자 로그인")
-async def login_user(user_data: UserLogin, db: Any = Depends(get_db)):
+async def login_user(user_data: UserLogin):
     """로그인 및 JWT 토큰 발급"""
     stored_hash = db_ops.get_user_password_hash(user_data.username)
 
@@ -137,7 +133,7 @@ async def login_user(user_data: UserLogin, db: Any = Depends(get_db)):
 @router.get(
     "/check-id/{username}", response_model=SuccessResponse, summary="아이디 중복 확인"
 )
-async def check_id_availability(username: str, db: Any = Depends(get_db)):
+async def check_id_availability(username: str):
     """
     주어진 아이디(username)가 이미 데이터베이스에 존재하는지 확인합니다.
     """
@@ -176,15 +172,6 @@ async def get_user_profile(current_user: dict = Depends(get_current_active_user)
         raise HTTPException(status_code=404, detail="프로필을 찾을 수 없습니다.")
 
     return profile_data
-    # # ✅ DB 필드명 → 프론트엔드 필드명 변환
-    # frontend_profile = UserProfile.from_db_dict(profile_data)
-
-    # return {
-    #     "id": current_user.get("id"),
-    #     "username": current_user.get("username"),
-    #     "main_profile_id": current_user.get("main_profile_id"),
-    #     "profile": frontend_profile.model_dump(),
-    # }
 
 
 # 11.18 수정
@@ -362,21 +349,12 @@ async def refresh_access_token(request: RefreshTokenRequest):
         )
 
 
-# 11.18 추가: 로그아웃 엔드포인트
 @router.post("/logout", response_model=SuccessResponse, summary="로그아웃")
-async def logout_user(request: RefreshTokenRequest):
+async def logout_user():
     """
-    로그아웃 처리. 클라이언트 측에서 받은 리프레시 토큰을 DB에서 삭제합니다.
+    로그아웃 처리. JWT는 stateless이므로 서버 측 처리 없이
+    클라이언트에서 토큰을 삭제하는 것으로 로그아웃됩니다.
     """
-    success = db_ops.delete_refresh_token(request.refresh_token)
-
-    if not success:
-        # 실패해도 클라이언트 입장에선 로그아웃된 것이므로 에러를 발생시키지 않을 수 있음
-        # 여기서는 명확한 피드백을 위해 실패 메시지 반환
-        return SuccessResponse(
-            message="로그아웃 처리 중 토큰을 찾지 못했지만, 클라이언트 세션은 종료됩니다."
-        )
-
     return SuccessResponse(message="성공적으로 로그아웃되었습니다.")
 
 

@@ -19,19 +19,20 @@ service_graph.py
 
 from __future__ import annotations
 
+import logging
 import os, sys
 from datetime import datetime, timezone
 from typing import Any, Dict
 from langsmith import traceable
+
+logger = logging.getLogger(__name__)
 
 # 프로젝트 루트 경로를 sys.path에 추가
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.config import settings
 
 # LangGraph
 from langgraph.graph import StateGraph, END
@@ -46,25 +47,18 @@ from app.langgraph.state.ephemeral_context import State, Message, RagSnippet
 # ─────────────────────────────────────────────────────────
 # 환경 변수
 # ─────────────────────────────────────────────────────────
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "dragonkue/bge-m3-ko")
+OPENAI_API_KEY = settings.OPENAI_API_KEY
+DATABASE_URL = settings.DATABASE_URL
+EMBEDDING_MODEL = settings.EMBEDDING_MODEL
+CHECKPOINT_DB_PATH = settings.CHECKPOINT_DB_PATH
 
-# 🔥 추가: 체크포인터 DB 경로 설정
-CHECKPOINT_DB_PATH = os.getenv("CHECKPOINT_DB_PATH", "/home/ubuntu/Poly/checkpoints.db")
-
-if os.getenv("LANGSMITH_TRACING", "false").lower() == "true":
-    os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
-    os.environ["LANGSMITH_ENDPOINT"] = os.getenv(
-        "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com"
-    )
-    os.environ["LANGSMITH_PROJECT"] = os.getenv(
-        "LANGSMITH_PROJECT", "pr-medical-chatbot"
-    )
+if settings.LANGSMITH_TRACING:
+    os.environ["LANGSMITH_API_KEY"] = settings.LANGSMITH_API_KEY
+    os.environ["LANGSMITH_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
+    os.environ["LANGSMITH_PROJECT"] = settings.LANGSMITH_PROJECT
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from app.langgraph.utils.time_utils import now_iso as _now_iso
 
 
 # 🔥 추가: SQLite 체크포인터 싱글톤 관리
@@ -81,7 +75,7 @@ def _get_checkpointer() -> SqliteSaver:
     global _checkpointer_conn, _checkpointer
 
     if _checkpointer is None:
-        print(f"🔧 [Checkpointer] SQLite 초기화: {CHECKPOINT_DB_PATH}", flush=True)
+        logger.info("Checkpointer SQLite 초기화: %s", CHECKPOINT_DB_PATH)
 
         # SQLite 연결 (WAL 모드로 성능 향상)
         _checkpointer_conn = sqlite3.connect(
@@ -92,7 +86,7 @@ def _get_checkpointer() -> SqliteSaver:
         _checkpointer_conn.execute("PRAGMA synchronous=NORMAL")
 
         _checkpointer = SqliteSaver(_checkpointer_conn)
-        print("✅ [Checkpointer] SQLite 체크포인터 준비 완료", flush=True)
+        logger.info("SQLite 체크포인터 준비 완료")
 
     return _checkpointer
 
@@ -199,7 +193,7 @@ try:
         user_context_node as user_context_node,
     )
 except Exception as e:
-    print(f"[service_graph] user_context_node import failed: {e}")
+    logger.warning("user_context_node import failed: %s", e)
 
     def user_context_node(state: State) -> Dict[str, Any]:
         # 더미: 프로필/컬렉션 병합 없이 그대로 통과
@@ -230,7 +224,7 @@ try:
         policy_retriever_node as policy_retriever_node,
     )
 except Exception as e:
-    print(f"[service_graph] policy_retriever_node import failed: {e}")
+    logger.warning("policy_retriever_node import failed: %s", e)
 
     def policy_retriever_node(state: State) -> Dict[str, Any]:
         # 더미 RAG 스니펫 1개
@@ -345,7 +339,7 @@ def build_graph():
         action = (state or {}).get("user_action")
 
         # 🔍 디버깅 로그
-        print(f"[route_edge] next='{nxt}', user_action='{action}'", flush=True)
+        logger.debug("route_edge: next='%s', user_action='%s'", nxt, action)
 
         if nxt == "end":
             # 1) 초기화 + 저장 안 함 → 그냥 종료 (persist X)

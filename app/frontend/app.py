@@ -3,7 +3,7 @@
 import streamlit as st
 
 # import requests
-from src.state_manger import initialize_session_state
+from src.state_manager import initialize_session_state
 from src.pages.login import (
     initialize_auth_state,
     render_login_tab,

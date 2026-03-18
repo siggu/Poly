@@ -1,10 +1,15 @@
 # app/main.py
 from __future__ import annotations
-from dotenv import load_dotenv
-import os
+import logging
 from contextlib import asynccontextmanager
 
-load_dotenv()
+from app.config import settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
@@ -18,43 +23,38 @@ async def lifespan(app: FastAPI):
     - Startup: OpenAI 클라이언트 및 DB 연결 풀 사전 초기화
     - Shutdown: 필요한 정리 작업 수행
     """
-    # Startup: 사전 초기화
-    print("=" * 60)
-    print("🔄 서비스 사전 초기화 중...")
+    logger.info("=" * 60)
+    logger.info("서비스 사전 초기화 중...")
 
-    # 1. OpenAI 클라이언트 초기화
     try:
         from app.langgraph.nodes.policy_retriever import _get_openai_client
 
         _get_openai_client()
-        print("✅ OpenAI 클라이언트 초기화 완료")
+        logger.info("OpenAI 클라이언트 초기화 완료")
     except Exception as e:
-        print(f"⚠️  OpenAI 클라이언트 초기화 실패: {e}")
+        logger.warning(f"OpenAI 클라이언트 초기화 실패: {e}")
 
-    # 2. DB 연결 풀 초기화
     try:
         from app.langgraph.nodes.policy_retriever import _get_connection_pool
 
         _get_connection_pool()
-        print("✅ DB 연결 풀 초기화 완료")
+        logger.info("DB 연결 풀 초기화 완료")
     except Exception as e:
-        print(f"⚠️  DB 연결 풀 초기화 실패: {e}")
+        logger.warning(f"DB 연결 풀 초기화 실패: {e}")
 
-    # 3. LangGraph 워크플로우 사전 빌드
     try:
         from app.api.v1.chat import get_graph_app
 
         get_graph_app()
-        print("✅ LangGraph 워크플로우 초기화 완료")
+        logger.info("LangGraph 워크플로우 초기화 완료")
     except Exception as e:
-        print(f"⚠️  LangGraph 초기화 실패: {e}")
+        logger.warning(f"LangGraph 초기화 실패: {e}")
 
-    print("=" * 60)
+    logger.info("=" * 60)
 
     yield
 
-    # Shutdown
-    print("🛑 서버 종료")
+    logger.info("서버 종료")
 
 
 app = FastAPI(
@@ -64,10 +64,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 설정 추가 (Streamlit과 통신 위해)
+# CORS 설정
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

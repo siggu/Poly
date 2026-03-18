@@ -9,7 +9,7 @@ __pycache__/
 
 # Environments
 .env
-venv/g
+venv/
 ENV/
 .env.local
 .env.prod
@@ -17,6 +17,8 @@ ENV/
 # IDE files
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # Byte-compiled / optimized / DLL files
 *.py[cod]

@@ -53,13 +53,13 @@ ephemeral_collection 구조 예:
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TypedDict
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
+
+from app.config import settings
 
 # LangSmith trace 데코레이터 (없으면 no-op)
 try:
@@ -69,22 +69,13 @@ except Exception:  # pragma: no cover
         return func
 
 from app.langgraph.state.ephemeral_context import State, Message
+from app.langgraph.utils.openai_client import get_openai_client
 
-load_dotenv()
-
-INFO_EXTRACTOR_MODEL = os.getenv(
-    "INFO_EXTRACTOR_MODEL",
-    os.getenv("ROUTER_MODEL", "gpt-4o-mini"),
-)
-
-_client: Optional[OpenAI] = None
+INFO_EXTRACTOR_MODEL = settings.ROUTER_MODEL
 
 
 def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI()
-    return _client
+    return get_openai_client()
 
 
 def _now_iso() -> str:

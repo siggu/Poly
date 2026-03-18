@@ -27,38 +27,39 @@ persist_pipeline.py
 
 from __future__ import annotations
 
-import os
-from typing import Any, Dict, List, Optional, TypedDict, Literal
+import logging
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Literal
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
+logger = logging.getLogger(__name__)
 
-load_dotenv()
+from app.config import settings
 
 import psycopg  # psycopg3
 from openai import OpenAI
 
 from app.langgraph.utils.cleaner_utils import clean_messages
+from app.langgraph.utils.time_utils import now_iso as _now_iso
+from app.langgraph.state.ephemeral_context import Message, PersistResult
 from app.dao import db_user_utils
 
 
 # ─────────────────────────────────────────────────────────
 # 환경 변수 (Cleaner 기본값 및 DB / OpenAI)
 # ─────────────────────────────────────────────────────────
-ENV_ENABLE = os.getenv("PERSIST_ENABLE_CLEANER", "true").lower() == "true"
-ENV_MODE: Literal["full", "mask-only", "off"] = os.getenv("PERSIST_CLEANER_MODE", "full").lower()
-ENV_NO_STORE_POLICY: Literal["drop", "redact"] = os.getenv("PERSIST_NO_STORE_POLICY", "redact").lower()
+ENV_ENABLE = settings.PERSIST_ENABLE_CLEANER
+ENV_MODE = settings.PERSIST_CLEANER_MODE
+ENV_NO_STORE_POLICY = settings.PERSIST_NO_STORE_POLICY
 
-DB_URL = os.getenv("DATABASE_URL")
+DB_URL = settings.DATABASE_URL
 if DB_URL and DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
 
-# OpenAI 설정
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = settings.OPENAI_API_KEY
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY not configured in .env")
 
-OPENAI_MODEL = "text-embedding-3-small"  # 1536차원
+OPENAI_MODEL = settings.EMBEDDING_MODEL
 
 # lazy 로딩용 전역
 _openai_client: Optional[OpenAI] = None
@@ -70,24 +71,6 @@ def _get_openai_client() -> OpenAI:
     if _openai_client is None:
         _openai_client = OpenAI(api_key=OPENAI_API_KEY)
     return _openai_client
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-class Message(TypedDict, total=False):
-    role: Literal["user", "assistant", "tool"]
-    content: str
-    created_at: str
-    meta: Dict[str, Any]
-
-
-class PersistResult(TypedDict, total=False):
-    ok: bool
-    conversation_id: Optional[str]
-    counts: Dict[str, int]
-    warnings: List[str]
 
 
 def _append_tool(msgs: List[Message], text: str, meta: Optional[Dict[str, Any]] = None) -> Message:
@@ -168,7 +151,7 @@ def _embed_chunks(text: str) -> List[Dict[str, Any]]:
         }]
 
     except Exception as e:
-        print(f"[persist_pipeline] OpenAI 임베딩 생성 오류: {e}")
+        logger.error("OpenAI 임베딩 생성 오류: %s", e)
         # 오류 시 빈 리스트 반환 (임베딩 저장 건너뜀)
         return []
 
@@ -349,6 +332,120 @@ def _diff_merge(cur, state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────
+# 메시지 준비: 중복 제거 + 클리닝
+# ─────────────────────────────────────────────────────────
+def _prepare_messages(
+    raw_msgs: List[Message],
+    enable: bool,
+    mode: str,
+    no_store_policy: str,
+) -> List[Message]:
+    """메시지 중복 제거 후 PII 마스킹/no_store 처리/길이 제한을 적용합니다."""
+    seen = set()
+    deduped: List[Message] = []
+    for m in raw_msgs:
+        key = (m.get("content", ""), m.get("role", ""))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(m)
+
+    cleaned = clean_messages(
+        messages=deduped,
+        enable=enable,
+        mode=mode,
+        no_store_policy=no_store_policy,
+    )
+    logger.info("After cleaning: %d messages (from %d deduped)", len(cleaned), len(deduped))
+    return cleaned
+
+
+# ─────────────────────────────────────────────────────────
+# DB 트랜잭션: profile/collection 병합 + conversation/messages 저장
+# ─────────────────────────────────────────────────────────
+def _persist_to_db(
+    state: Dict[str, Any],
+    cleaned: List[Message],
+    final_summary: str,
+    embeddings: List[Dict[str, Any]],
+    log_messages: List[Message],
+    profile_id: Optional[int],
+) -> Tuple[List[str], Optional[str], Optional[int]]:
+    """
+    DB 트랜잭션을 실행하여 프로필/컬렉션 병합, 대화/메시지/임베딩을 저장합니다.
+
+    Returns:
+        (warnings, conversation_id, profile_id)
+    """
+    warnings: List[str] = []
+    conversation_id: Optional[str] = None
+
+    try:
+        with psycopg.connect(DB_URL, autocommit=False) as conn:
+            with conn.cursor() as cur:
+                # profile / collections 병합 + upsert
+                if profile_id is not None:
+                    logger.debug("Merging profile/collection for profile_id=%s", profile_id)
+                    merge_result = _diff_merge(cur, state)
+                    merged_profile = merge_result.get("merged_profile")
+                    merged_collection = merge_result.get("merged_collection")
+                    merge_log = merge_result.get("merge_log") or []
+
+                    log_messages.append(
+                        _append_tool(cleaned, "[persist_pipeline] diff_merge completed", {"log": merge_log})
+                    )
+
+                    if merged_profile is not None:
+                        pid = db_user_utils.upsert_profile(cur, merged_profile)
+                        profile_id = pid
+
+                    if merged_collection is not None:
+                        triples = merged_collection.get("triples") or []
+                        db_user_utils.upsert_collection(cur, profile_id, triples)
+                else:
+                    warnings.append("profile_id is None; skip profile/collection upsert")
+                    log_messages.append(
+                        _append_tool(cleaned, "[persist_pipeline] no profile_id; skip profile/collection")
+                    )
+
+                # conversations upsert
+                summary_obj: Dict[str, Any] = {"text": final_summary}
+                model_stats = state.get("model_stats") or {}
+                if profile_id is not None:
+                    logger.debug("Upserting conversation for profile_id=%s", profile_id)
+                    conversation_id = db_user_utils.upsert_conversation(
+                        cur,
+                        profile_id=profile_id,
+                        summary=summary_obj,
+                        model_stats=model_stats,
+                        ended_at=datetime.now(timezone.utc),
+                    )
+                    logger.debug("Conversation ID: %s", conversation_id)
+                else:
+                    warnings.append("conversation not saved: profile_id is None")
+
+                # messages / embeddings insert
+                if conversation_id is not None:
+                    logger.debug("Inserting %d messages", len(cleaned))
+                    db_user_utils.bulk_insert_messages(cur, conversation_id, cleaned)
+                    if embeddings:
+                        logger.debug("Inserting %d embeddings", len(embeddings))
+                        db_user_utils.bulk_insert_conversation_embeddings(cur, conversation_id, embeddings)
+
+                logger.info("Committing transaction...")
+                conn.commit()
+                logger.info("Transaction committed successfully!")
+
+    except Exception as e:
+        logger.error("persist_pipeline DB error: %s", e, exc_info=True)
+        warnings.append(f"DB error: {e}")
+        log_messages.append(
+            _append_tool(cleaned, "[persist_pipeline] DB error; rollback", {"error": str(e)})
+        )
+
+    return warnings, conversation_id, profile_id
+
+
+# ─────────────────────────────────────────────────────────
 # 메인: persist 노드
 # ─────────────────────────────────────────────────────────
 def persist(
@@ -368,195 +465,63 @@ def persist(
         여기서는 그 전체를 읽어 DB에 저장만 하고,
         그래프에 되돌려줄 "messages"는 이번 노드에서 새로 남긴 tool 로그(delta)만 리턴한다.
     """
-    # 🔍 디버깅 로그
-    print(f"[persist_pipeline] STARTED - session_id={state.get('session_id')}, profile_id={state.get('profile_id')}, msg_count={len(state.get('messages', []))}", flush=True)
+    logger.info("persist_pipeline STARTED - session_id=%s, profile_id=%s, msg_count=%d",
+                state.get('session_id'), state.get('profile_id'), len(state.get('messages', [])))
 
-    # DB URL 없으면 DB 작업을 스킵하고 로그만 남김
+    # DB URL 없으면 스킵
     if not DB_URL:
         raw_msgs: List[Message] = list(state.get("messages") or [])
-        msgs_for_db = raw_msgs  # 그대로 사용 (cleaner도 안 들어감)
-        # delta 용 로그
-        log_msg = _append_tool(
-            msgs_for_db,
-            "[persist_pipeline] DATABASE_URL not set; skipping DB upsert",
-        )
+        log_msg = _append_tool(raw_msgs, "[persist_pipeline] DATABASE_URL not set; skipping DB upsert")
         result: PersistResult = {
-            "ok": False,
-            "conversation_id": None,
-            "counts": {"messages": len(msgs_for_db), "embeddings": 0},
+            "ok": False, "conversation_id": None,
+            "counts": {"messages": len(raw_msgs), "embeddings": 0},
             "warnings": ["DATABASE_URL not set"],
         }
-        return {
-            "messages": [log_msg],  # delta만 리턴
-            "persist_result": result,
-            "rolling_summary": state.get("rolling_summary"),
-        }
+        return {"messages": [log_msg], "persist_result": result, "rolling_summary": state.get("rolling_summary")}
 
-    # 그래프 state에서 messages 전체를 읽어서 DB에 저장용으로 사용
     raw_msgs: List[Message] = list(state.get("messages") or [])
     rolling_summary = state.get("rolling_summary")
     profile_id = state.get("profile_id")
 
-    # 1) Cleaner 토글 파라미터 결정
+    # Cleaner 파라미터 결정
     _enable = ENV_ENABLE if enable_cleaner is None else bool(enable_cleaner)
     _mode = ENV_MODE if cleaner_mode is None else cleaner_mode
     _no_store = ENV_NO_STORE_POLICY if no_store_policy is None else no_store_policy
 
-    # 2) state.messages 내에서 중복 제거 (content + role 기준)
-    #    → LLM은 전체 대화 이력을 참조하지만, DB에는 중복 없이 저장
-    seen = set()
-    deduped_msgs: List[Message] = []
-    for m in raw_msgs:
-        key = (m.get("content", ""), m.get("role", ""))
-        if key not in seen:
-            seen.add(key)
-            deduped_msgs.append(m)
+    # 1) 메시지 준비 (중복 제거 + 클리닝)
+    cleaned = _prepare_messages(raw_msgs, _enable, _mode, _no_store)
 
-    # 3) 메시지 클리닝 (PII 마스킹, no_store 처리, 길이 제한)
-    cleaned: List[Message] = clean_messages(
-        messages=deduped_msgs,  # 중복 제거된 메시지 사용
-        enable=_enable,
-        mode=_mode,
-        no_store_policy=_no_store,
-    )
-
-    print(f"[persist_pipeline] After cleaning: {len(cleaned)} messages (from {len(deduped_msgs)} deduped)", flush=True)
-
-    # delta 로 반환할 tool 로그들은 따로 모은다.
     log_messages: List[Message] = []
-
-    # cleaner 적용 로그는 cleaned에도(실제 DB 저장용) 남기고,
-    # 반환 delta(log_messages)에도 공유한다.
     log_messages.append(
-        _append_tool(
-            cleaned,
-            "[persist_pipeline] cleaner applied",
-            {"enable": _enable, "mode": _mode, "no_store_policy": _no_store},
-        )
+        _append_tool(cleaned, "[persist_pipeline] cleaner applied",
+                     {"enable": _enable, "mode": _mode, "no_store_policy": _no_store})
     )
 
-    print(f"[persist_pipeline] Cleaner applied", flush=True)
-
-    # 3) 최종 요약 생성
+    # 2) 요약 생성 + 임베딩
     final_summary = _summarize_session(rolling_summary, cleaned)
-
-    # 4) 임베딩 (bge-m3-ko)
     embeddings = _embed_chunks(final_summary)
 
-    # 5) DB upsert (트랜잭션)
-    warnings: List[str] = []
-    conversation_id: Optional[str] = None
-    msg_count = len(cleaned)
-    emb_count = len(embeddings)
+    # 3) DB 저장
+    logger.info("Starting DB transaction...")
+    warnings, conversation_id, profile_id = _persist_to_db(
+        state, cleaned, final_summary, embeddings, log_messages, profile_id,
+    )
 
-    print(f"[persist_pipeline] Starting DB transaction...", flush=True)
-
-    try:
-        with psycopg.connect(DB_URL, autocommit=False) as conn:
-            with conn.cursor() as cur:
-                merged_profile = None
-                merged_collection = None
-                merge_log: List[str] = []
-
-                # 5-1) profile / collections 병합 + upsert
-                if profile_id is not None:
-                    print(f"[persist_pipeline] Merging profile/collection for profile_id={profile_id}", flush=True)
-                    merge_result = _diff_merge(cur, state)
-                    merged_profile = merge_result.get("merged_profile")
-                    merged_collection = merge_result.get("merged_collection")
-                    merge_log = merge_result.get("merge_log") or []
-
-                    log_messages.append(
-                        _append_tool(
-                            cleaned,
-                            "[persist_pipeline] diff_merge completed",
-                            {"log": merge_log},
-                        )
-                    )
-
-                    # profiles upsert
-                    if merged_profile is not None:
-                        pid = db_user_utils.upsert_profile(cur, merged_profile)
-                        profile_id = pid  # 새로 생성됐을 경우 갱신
-
-                    # collections upsert (트리플 기반)
-                    if merged_collection is not None:
-                        triples = merged_collection.get("triples") or []
-                        db_user_utils.upsert_collection(cur, profile_id, triples)
-
-                else:
-                    warnings.append("profile_id is None; skip profile/collection upsert")
-                    log_messages.append(
-                        _append_tool(
-                            cleaned,
-                            "[persist_pipeline] no profile_id; skip profile/collection",
-                        )
-                    )
-
-                # 5-2) conversations upsert
-                summary_obj: Dict[str, Any] = {"text": final_summary}
-                model_stats = state.get("model_stats") or {}
-                if profile_id is not None:
-                    print(f"[persist_pipeline] Upserting conversation for profile_id={profile_id}", flush=True)
-                    conversation_id = db_user_utils.upsert_conversation(
-                        cur,
-                        profile_id=profile_id,
-                        summary=summary_obj,
-                        model_stats=model_stats,
-                        ended_at=datetime.now(timezone.utc),
-                    )
-                    print(f"[persist_pipeline] Conversation ID: {conversation_id}", flush=True)
-                else:
-                    warnings.append("conversation not saved: profile_id is None")
-
-                # 5-3) messages / embeddings insert
-                if conversation_id is not None:
-                    print(f"[persist_pipeline] Inserting {len(cleaned)} messages", flush=True)
-                    db_user_utils.bulk_insert_messages(cur, conversation_id, cleaned)
-                    if embeddings:
-                        print(f"[persist_pipeline] Inserting {len(embeddings)} embeddings", flush=True)
-                        db_user_utils.bulk_insert_conversation_embeddings(cur, conversation_id, embeddings)
-
-                print(f"[persist_pipeline] Committing transaction...", flush=True)
-                conn.commit()
-                print(f"[persist_pipeline] Transaction committed successfully!", flush=True)
-
-    except Exception as e:
-        print(f"[persist_pipeline] ERROR: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
-        warnings.append(f"DB error: {e}")
-        log_messages.append(
-            _append_tool(
-                cleaned,
-                "[persist_pipeline] DB error; rollback",
-                {"error": str(e)},
-            )
-        )
-
-    # 6) 결과 리턴
+    # 4) 결과 리턴
     result: PersistResult = {
         "ok": len(warnings) == 0,
         "conversation_id": conversation_id,
-        "counts": {"messages": msg_count, "embeddings": emb_count},
+        "counts": {"messages": len(cleaned), "embeddings": len(embeddings)},
         "warnings": warnings,
     }
-
     log_messages.append(
-        _append_tool(
-            cleaned,
-            "[persist_pipeline] done",
-            {
-                "ok": result["ok"],
-                "conversation_id": conversation_id,
-                "counts": result["counts"],
-                "warnings": warnings,
-            },
-        )
+        _append_tool(cleaned, "[persist_pipeline] done", {
+            "ok": result["ok"], "conversation_id": conversation_id,
+            "counts": result["counts"], "warnings": warnings,
+        })
     )
 
     return {
-        # 🔹 그래프에는 이번 노드에서 새로 생성한 tool 로그(delta)만 넘긴다.
         "messages": log_messages,
         "persist_result": result,
         "rolling_summary": final_summary,

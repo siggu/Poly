@@ -2,27 +2,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import os
 import re
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime, timezone
+
+from app.config import settings
+from app.langgraph.state.ephemeral_context import Message
 
 # ─────────────────────────────────────────────────────────
 # 환경 변수 (테스트에서 쉽게 토글)
 # ─────────────────────────────────────────────────────────
-ENV_ENABLE = os.getenv("PERSIST_ENABLE_CLEANER", "true").lower() == "true"
-ENV_MODE: Literal["full", "mask-only", "off"] = os.getenv("PERSIST_CLEANER_MODE", "full").lower()  # full|mask-only|off
-ENV_NO_STORE_POLICY: Literal["drop", "redact"] = os.getenv("PERSIST_NO_STORE_POLICY", "redact").lower()  # drop|redact
-ENV_MAX_BYTES = int(os.getenv("PERSIST_CLEANER_MAX_BYTES", "4096"))  # 메시지 본문 저장 상한(바이트)
-
-# ─────────────────────────────────────────────────────────
-# 타입
-# ─────────────────────────────────────────────────────────
-class Message(TypedDict, total=False):
-    role: Literal["user", "assistant", "tool"]
-    content: str
-    created_at: str
-    meta: Dict[str, Any]
+ENV_ENABLE = settings.PERSIST_ENABLE_CLEANER
+ENV_MODE = settings.PERSIST_CLEANER_MODE
+ENV_NO_STORE_POLICY = settings.PERSIST_NO_STORE_POLICY
+ENV_MAX_BYTES = settings.PERSIST_CLEANER_MAX_BYTES
 
 # ─────────────────────────────────────────────────────────
 # PII 마스킹(라이트 규칙)

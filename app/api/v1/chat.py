@@ -8,8 +8,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 
+import logging
+
 from app.agents.new_pipeline import build_graph
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ⭐ 전역 캐시 (싱글톤 패턴)
@@ -27,14 +30,14 @@ def get_graph_app():
 
     if _graph_app is None:
         try:
-            print("🔧 [INFO] LangGraph 워크플로우 초기화 중...")
+            logger.info("LangGraph 워크플로우 초기화 중...")
             _graph_app = build_graph()
-            print("✅ [INFO] LangGraph 초기화 완료")
+            logger.info("LangGraph 초기화 완료")
         except Exception as e:
             _graph_init_error = HTTPException(
                 status_code=503, detail=f"LangGraph 초기화 실패: {str(e)}"
             )
-            print(f"🔥 [ERROR] LangGraph 초기화 실패: {e}")
+            logger.error("LangGraph 초기화 실패: %s", e)
             raise _graph_init_error
 
     return _graph_app
@@ -82,7 +85,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     session_id = req.session_id or f"sess-{uuid4().hex}"
 
     # 🔍 디버깅 로그 추가
-    print(f"[chat API] user_action='{req.user_action}', user_input='{req.user_input[:50] if req.user_input else '(empty)'}', session_id={session_id}", flush=True)
+    logger.info("chat API: user_action='%s', user_input='%s', session_id=%s", req.user_action, req.user_input[:50] if req.user_input else '(empty)', session_id)
 
     # B) LangGraph에 넘길 초기 state
     base_end_session = req.user_action in ("reset_save", "reset_drop")
@@ -191,7 +194,7 @@ async def chat_stream(req: ChatRequest):
     # A) 세션 ID 생성/유지
     session_id = req.session_id or f"sess-{uuid4().hex}"
 
-    print(f"[chat/stream API] user_action='{req.user_action}', user_input='{req.user_input[:50] if req.user_input else '(empty)'}', session_id={session_id}", flush=True)
+    logger.info("chat/stream API: user_action='%s', user_input='%s', session_id=%s", req.user_action, req.user_input[:50] if req.user_input else '(empty)', session_id)
 
     # B) LangGraph에 넘길 초기 state (streaming_mode=True 추가)
     base_end_session = req.user_action in ("reset_save", "reset_drop")

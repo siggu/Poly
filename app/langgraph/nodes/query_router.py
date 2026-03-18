@@ -35,13 +35,13 @@ query_router.py
 from __future__ import annotations
 
 import json
-import os
 import re
 from typing import Any, Dict, Literal, Optional, TypedDict
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
+
+from app.config import settings
 
 # LangSmith trace 데코레이터 (없으면 no-op)
 try:
@@ -51,21 +51,14 @@ except Exception:  # pragma: no cover
         return func
 
 from app.langgraph.state.ephemeral_context import State, Message
-from datetime import datetime, timezone
+from app.langgraph.utils.time_utils import now_iso as _now_iso
+from app.langgraph.utils.openai_client import get_openai_client
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-load_dotenv()
-
-ROUTER_MODEL = os.getenv("ROUTER_MODEL", "gpt-4o-mini")
-
-# 모듈 로드 시점에 즉시 초기화하여 cold start 방지
-_client = OpenAI()
+ROUTER_MODEL = settings.ROUTER_MODEL
 
 
 def _get_client() -> OpenAI:
-    return _client
+    return get_openai_client()
 
 
 class RouterDecision(BaseModel):

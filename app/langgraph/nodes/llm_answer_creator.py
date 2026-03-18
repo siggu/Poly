@@ -6,20 +6,16 @@
 from __future__ import annotations
 
 import json
-import os
-import time  # 🔥 추가: 타이밍 측정용
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
+from app.config import settings
 from app.langgraph.state.ephemeral_context import State as GraphState, Message
+from app.langgraph.utils.openai_client import get_openai_client
 
-load_dotenv()
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gpt-4o-mini")
+client = get_openai_client()
+ANSWER_MODEL = settings.ANSWER_MODEL
 
 # ───────────────────────────────────────────────────────────
 # 시스템 프롬프트

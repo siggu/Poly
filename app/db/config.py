@@ -1,45 +1,45 @@
-"""11.12 환경 변수 로드 및 데이터베이스 연결 설정 및 유효성 검사"""
+"""데이터베이스 연결 설정 - app.config의 Settings를 기반으로 DB_CONFIG 생성"""
 
-import os
 import logging
-from dotenv import load_dotenv
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+DB_CONFIG = {}
 
-# DB 설정 가져오기 (기본값 제거)
-raw_db_config = {
-    "host": os.getenv("DB_HOST"),
-    # DB_PORT 기본값 제거. 환경 변수가 없으면 None이 반환됩니다.
-    "port": os.getenv("DB_PORT"),
-    "database": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    # DB_PASSWORD도 기본값 제거
-    "password": os.getenv("DB_PASSWORD"),
-}
-
-DB_CONFIG = {}  # 유효성 검사를 통과한 최종 설정을 저장할 딕셔너리
-
-# 필수 환경 변수 검사 및 타입 변환 (Fail Fast 원칙)
-for key, value in raw_db_config.items():
-    if value is None or (isinstance(value, str) and value.strip() == ""):
-        logger.error(f"필수 환경 변수 'DB_{key.upper()}'가 누락되었습니다.")
-        raise EnvironmentError(
-            f"필수 환경 변수 'DB_{key.upper()}'가 누락되었습니다. 프로그램을 중단합니다."
-        )
-
-    # Port는 정수로 변환 시도
-    if key == "port":
-        try:
-            DB_CONFIG[key] = int(value)
-        except ValueError:
-            logger.error(
-                f"환경 변수 'DB_PORT'의 값 '{value}'는 유효한 정수가 아닙니다."
+# DATABASE_URL이 있으면 파싱, 없으면 개별 환경변수 사용
+if settings.DATABASE_URL:
+    from urllib.parse import urlparse
+    db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    parsed = urlparse(db_url)
+    DB_CONFIG = {
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "database": parsed.path[1:] if parsed.path else "",
+        "user": parsed.username,
+        "password": parsed.password,
+    }
+else:
+    # 개별 환경변수에서 DB 설정 로드
+    required_keys = {
+        "host": settings.DB_HOST,
+        "port": settings.DB_PORT,
+        "database": settings.DB_NAME,
+        "user": settings.DB_USER,
+        "password": settings.DB_PASSWORD,
+    }
+    for key, value in required_keys.items():
+        if not value and key != "port":
+            logger.error(f"필수 환경 변수 'DB_{key.upper()}'가 누락되었습니다.")
+            raise EnvironmentError(
+                f"필수 환경 변수 'DB_{key.upper()}'가 누락되었습니다. 프로그램을 중단합니다."
             )
-            raise EnvironmentError("DB_PORT 환경 변수 오류. 유효한 정수여야 합니다.")
-    else:
-        DB_CONFIG[key] = value
+    DB_CONFIG = {
+        "host": settings.DB_HOST,
+        "port": settings.DB_PORT,
+        "database": settings.DB_NAME,
+        "user": settings.DB_USER,
+        "password": settings.DB_PASSWORD,
+    }
 
 logger.info("DB 환경 설정 로드 및 유효성 검사 성공.")
-# 이제 DB_CONFIG는 모든 필수 설정이 포함된 안전한 딕셔너리입니다.

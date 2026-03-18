@@ -7,7 +7,7 @@ import logging
 from ..backend_service import backend_service
 from ..utils.template_loader import load_css
 from ..utils.session_manager import clear_session
-from src.state_manger import get_redirect_info, clear_redirect, reset_profile_states
+from src.state_manager import get_redirect_info, clear_redirect, reset_profile_states
 
 # 로거 설정
 logger = logging.getLogger(__name__)

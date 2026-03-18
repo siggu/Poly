@@ -13,27 +13,18 @@ session_orchestrator.py
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, TypedDict, Literal
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.config import settings
+from app.langgraph.state.ephemeral_context import Message
 
 # ─────────────────────────────────────────────────────────
 # 환경 변수 (기본값 포함)
 # ─────────────────────────────────────────────────────────
-IDLE_TIMEOUT_SEC = int(os.getenv("SESSION_IDLE_TIMEOUT_SEC", "900"))          # 기본 15분
-MAX_TURNS = int(os.getenv("SESSION_MAX_TURNS", "128"))                        # 기본 128턴
-MAX_DURATION_SEC = int(os.getenv("SESSION_MAX_DURATION_SEC", str(2 * 3600)))  # 기본 2시간
-
-
-class Message(TypedDict, total=False):
-    role: Literal["user", "assistant", "tool"]
-    content: str
-    created_at: str
-    meta: Dict[str, Any]
+IDLE_TIMEOUT_SEC = settings.SESSION_IDLE_TIMEOUT_SEC
+MAX_TURNS = settings.SESSION_MAX_TURNS
+MAX_DURATION_SEC = settings.SESSION_MAX_DURATION_SEC
 
 
 class SessionOrchestratorOutput(TypedDict, total=False):

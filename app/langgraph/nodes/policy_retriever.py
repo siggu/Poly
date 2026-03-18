@@ -19,17 +19,20 @@ policy_retriever_node.py (단순화/재설계 + 컬렉션 계층 + synthetic que
 
 from __future__ import annotations
 
-import os
+import logging
 import re
 import math
 import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 import psycopg
 from psycopg_pool import ConnectionPool
-from dotenv import load_dotenv
-from openai import OpenAI
+
+from app.config import settings
+from app.langgraph.utils.openai_client import get_openai_client
 
 # LangSmith trace 데코레이터 (없으면 no-op)
 try:
@@ -43,12 +46,10 @@ except Exception:  # pragma: no cover
 from app.langgraph.state.ephemeral_context import State
 from app.langgraph.utils.retrieval_filters import filter_candidates_by_profile
 
-load_dotenv()
-
 # -------------------------------------------------------------------
 # DB URL
 # -------------------------------------------------------------------
-DB_URL = os.getenv("DATABASE_URL")
+DB_URL = settings.DATABASE_URL
 if not DB_URL:
     raise RuntimeError("DATABASE_URL not configured")
 
@@ -58,12 +59,11 @@ if DB_URL.startswith("postgresql+psycopg://"):
 # -------------------------------------------------------------------
 # Retriever tunable parameters
 # -------------------------------------------------------------------
-# ⚡ 성능/메모리 최적화: 검색 문서 수를 줄여서 처리 시간 단축 + 메모리 절약
-RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "8"))  # 12 → 8 (1GB RAM 최적화)
-CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "5"))  # 8 → 5 (1GB RAM 최적화)
-SIMILARITY_FLOOR = float(os.getenv("POLICY_RETRIEVER_SIM_FLOOR", "0.3"))
-MIN_CANDIDATES_AFTER_FLOOR = int(os.getenv("POLICY_RETRIEVER_MIN_AFTER_FLOOR", "5"))
-BM25_WEIGHT = float(os.getenv("POLICY_RETRIEVER_BM25_WEIGHT", "0.2"))  # 0.35 → 0.2
+RAW_TOP_K = settings.POLICY_RETRIEVER_RAW_TOP_K
+CONTEXT_TOP_K = settings.POLICY_RETRIEVER_CONTEXT_TOP_K
+SIMILARITY_FLOOR = settings.POLICY_RETRIEVER_SIM_FLOOR
+MIN_CANDIDATES_AFTER_FLOOR = settings.POLICY_RETRIEVER_MIN_AFTER_FLOOR
+BM25_WEIGHT = settings.POLICY_RETRIEVER_BM25_WEIGHT
 
 # 컬렉션 계층별 weight (L0 > L1 > L2)
 LAYER_WEIGHTS = {
@@ -76,11 +76,11 @@ LAYER_WEIGHTS = {
 # -------------------------------------------------------------------
 # OpenAI 임베딩 설정
 # -------------------------------------------------------------------
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = settings.OPENAI_API_KEY
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY not configured in .env")
 
-OPENAI_MODEL = "text-embedding-3-small"  # 1536차원
+OPENAI_MODEL = settings.EMBEDDING_MODEL
 EMBEDDING_CACHE_SIZE = 30  # 최대 캐시 개수 (메모리 최적화)
 
 # 전역 상태
@@ -90,13 +90,9 @@ _embedding_cache: Dict[str, List[float]] = {}  # cache_key -> 임베딩
 _cache_order: List[str] = []  # FIFO 방식 캐시 제거용 큐
 
 
-def _get_openai_client() -> OpenAI:
-    """OpenAI 클라이언트 가져오기 또는 생성 (싱글톤)"""
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("  ✅ [OpenAI] 클라이언트 초기화 완료", flush=True)
-    return _openai_client
+def _get_openai_client():
+    """OpenAI 클라이언트 가져오기 (공유 싱글턴)"""
+    return get_openai_client()
 
 
 def _get_connection_pool() -> ConnectionPool:
@@ -112,9 +108,7 @@ def _get_connection_pool() -> ConnectionPool:
             max_idle=60,  # 60초 유휴 연결 종료
             reconnect_timeout=10,  # 재연결 타임아웃
         )
-        print(
-            "  ✅ [DB Pool] 연결 풀 초기화 완료 (1-3개 연결, 5분 재활용)", flush=True
-        )
+        logger.info("DB Pool 연결 풀 초기화 완료 (1-3개 연결, 5분 재활용)")
     return _connection_pool
 
 
@@ -144,14 +138,11 @@ def _embed_text(text: str) -> List[float]:
     global _embedding_cache, _cache_order
     if cache_key in _embedding_cache:
         cache_elapsed = time.time() - cache_start
-        print(
-            f"  ✅ [캐시 HIT] {cache_elapsed:.4f}s, key: {cache_key[:8]}..., text_len: {len(text_to_embed)} chars",
-            flush=True,
-        )
+        logger.debug("캐시 HIT: %.4fs, key: %s..., text_len: %d chars", cache_elapsed, cache_key[:8], len(text_to_embed))
         return _embedding_cache[cache_key]
 
     cache_elapsed = time.time() - cache_start
-    print(f"  ⚠️  [캐시 MISS] {cache_elapsed:.4f}s, OpenAI API 호출 중...", flush=True)
+    logger.debug("캐시 MISS: %.4fs, OpenAI API 호출 중...", cache_elapsed)
 
     # 3. OpenAI API 호출
     api_start = time.time()
@@ -160,10 +151,7 @@ def _embed_text(text: str) -> List[float]:
         response = client.embeddings.create(model=OPENAI_MODEL, input=text_to_embed)
         embedding = response.data[0].embedding
         api_elapsed = time.time() - api_start
-        print(
-            f"  🔍 [OpenAI API] {api_elapsed:.2f}s, text_len: {len(text_to_embed)} chars",
-            flush=True,
-        )
+        logger.debug("OpenAI API: %.2fs, text_len: %d chars", api_elapsed, len(text_to_embed))
 
         # 4. 캐시 저장 (FIFO 방식)
         _embedding_cache[cache_key] = embedding
@@ -173,15 +161,12 @@ def _embed_text(text: str) -> List[float]:
         if len(_cache_order) > EMBEDDING_CACHE_SIZE:
             oldest_key = _cache_order.pop(0)
             _embedding_cache.pop(oldest_key, None)
-            print(
-                f"  🗑️  [캐시] 가장 오래된 항목 제거 (캐시 크기: {len(_embedding_cache)})",
-                flush=True,
-            )
+            logger.debug("캐시: 가장 오래된 항목 제거 (캐시 크기: %d)", len(_embedding_cache))
 
         return embedding
 
     except Exception as e:
-        print(f"  ❌ [OpenAI API 오류] {e}", flush=True)
+        logger.error("OpenAI API 오류: %s", e)
         # 오류 시: 제로 벡터 반환
         return [0.0] * 1536
 
@@ -516,93 +501,55 @@ def _build_synthetic_query(
 
     pieces.append("관련 의료·복지 지원 정책")
     synthetic = " ".join(pieces)
-    print(f"[policy_retriever_node] synthetic query used instead of raw: {synthetic}")
+    logger.info("synthetic query used instead of raw: %s", synthetic)
     return synthetic
 
 
 # -------------------------------------------------------------------
 # Hybrid Document Search (제목 title 임베딩만 사용)
 # -------------------------------------------------------------------
-def _hybrid_search_documents(
-    query_text: str,
+def _extract_region_filter(
     merged_profile: Optional[Dict[str, Any]],
-    top_k: int = 8,
-) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """
-    query_text 임베딩 기반 pgvector 검색.
-    - query_text: 오직 "정책 요청용" 텍스트 (raw 또는 synthetic)만 사용
-    - title 임베딩만 사용해서 정책 제목과의 유사도 측정
-    - region 은 DB 레벨 하드 필터링
-    """
-    query_text = (query_text or "").strip()
-    if not query_text:
-        return [], []
+) -> Optional[str]:
+    """프로필에서 region 필터 값을 추출하고 정규화합니다."""
+    if not merged_profile:
+        logger.debug("merged_profile is None or empty")
+        return None
 
-    # 키워드 추출 (로그용)
-    debug_keywords = extract_keywords(query_text, max_k=8)
+    region_val = merged_profile.get("residency_sgg_code")
+    if region_val is None:
+        region_val = merged_profile.get("region_gu")
+    logger.debug("merged_profile region_raw: %s", region_val)
 
-    # 1) region filter
-    region_filter: Optional[str] = None
-    if merged_profile:
-        region_val = merged_profile.get("residency_sgg_code")
-        if region_val is None:
-            region_val = merged_profile.get("region_gu")
-        print("[policy_retriever_node] merged_profile region_raw:", region_val)
-        region_filter = _sanitize_region(region_val)
-        print("[policy_retriever_node] region_filter after sanitize:", region_filter)
-        if region_filter is None:
-            print("[policy_retriever_node] region_filter empty or missing")
-    else:
-        print("[policy_retriever_node] merged_profile is None or empty")
+    region_filter = _sanitize_region(region_val)
+    logger.debug("region_filter after sanitize: %s", region_filter)
+    return region_filter
 
-    # 🔍 타이밍 측정 시작
+
+def _vector_search_db(
+    qvec_str: str,
+    region_filter: Optional[str],
+    top_k: int,
+) -> List[tuple]:
+    """pgvector 벡터 검색을 실행하고 원시 row 목록을 반환합니다."""
     import time
 
-    func_start = time.time()
-
-    # 2) 임베딩 계산 (정책 요청용 텍스트)
-    embed_start = time.time()
-    try:
-        qvec = _embed_text(query_text)
-    except Exception as e:
-        print(f"[policy_retriever_node] embed failed: {e}")
-        return [], debug_keywords
-    embed_elapsed = time.time() - embed_start
-    print(f"🔍 [Embedding] {embed_elapsed:.2f}s", flush=True)
-
-    # psycopg3에서 VECTOR 타입으로 캐스팅하기 위해 문자열 리터럴 사용
-    qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
-
-    # 3) pgvector 검색 + (선택적) 지역 하드필터
-    # ✅ region 필터를 벡터 검색 단계에 적용 (필터링된 문서 내에서만 검색)
     if region_filter:
         sql = """
             SELECT
-                d.id,
-                d.title,
-                d.requirements,
-                d.benefits,
-                d.region,
-                d.url,
+                d.id, d.title, d.requirements, d.benefits, d.region, d.url,
                 (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
             FROM embeddings e
             JOIN documents d ON d.id = e.doc_id
-            WHERE e.field = 'title'
-              AND d.region = %(region)s
+            WHERE e.field = 'title' AND d.region = %(region)s
             ORDER BY e.embedding <=> %(qvec)s::vector
             LIMIT %(limit)s
         """
         params = {"qvec": qvec_str, "region": region_filter, "limit": top_k}
     else:
-        # region 필터 없을 때: 단순 벡터 검색 (인덱스 사용)
         sql = """
             SELECT
-                d.id,
-                d.title,
-                d.requirements,
-                d.benefits,
-                d.region,
-                d.url,
+                d.id, d.title, d.requirements, d.benefits, d.region, d.url,
                 (1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
             FROM embeddings e
             JOIN documents d ON d.id = e.doc_id
@@ -612,7 +559,6 @@ def _hybrid_search_documents(
         """
         params = {"qvec": qvec_str, "limit": top_k}
 
-    rows = []
     db_start = time.time()
     pool = _get_connection_pool()
     with pool.connection() as conn:
@@ -621,16 +567,15 @@ def _hybrid_search_documents(
             rows = cur.fetchall()
     db_elapsed = time.time() - db_start
 
-    # 성능 모니터링: 0.1초(100ms) 이상이면 경고
     if db_elapsed > 0.1:
-        print(
-            f"🔴 [SLOW DB QUERY] {db_elapsed:.2f}s (expected <0.1s) - Connection pool 상태 확인 필요",
-            flush=True,
-        )
+        logger.warning("SLOW DB QUERY: %.2fs (expected <0.1s)", db_elapsed)
+    logger.debug("DB Query: %.2fs, returned %d rows", db_elapsed, len(rows))
 
-    print(f"🔍 [DB Query] {db_elapsed:.2f}s, returned {len(rows)} rows", flush=True)
+    return rows
 
-    # 4) 결과 가공 → rag_snippets 포맷
+
+def _format_rows_to_snippets(rows: List[tuple]) -> List[Dict[str, Any]]:
+    """DB 원시 row 목록을 rag_snippets 포맷으로 변환합니다."""
     results: List[Dict[str, Any]] = []
     for r in rows:
         similarity = float(r[6]) if r[6] is not None else None
@@ -646,25 +591,21 @@ def _hybrid_search_documents(
             snippet_lines.append(f"[지원 내용]\n{benefits}")
         snippet_text = "\n\n".join(snippet_lines).strip()
 
-        results.append(
-            {
-                "doc_id": r[0],
-                "title": (r[1] or "").strip() if isinstance(r[1], str) else None,
-                "requirements": requirements,
-                "benefits": benefits,
-                "region": region,
-                "url": url,
-                "similarity": similarity,
-                "snippet": snippet_text,
-            }
-        )
+        results.append({
+            "doc_id": r[0],
+            "title": (r[1] or "").strip() if isinstance(r[1], str) else None,
+            "requirements": requirements,
+            "benefits": benefits,
+            "region": region,
+            "url": url,
+            "similarity": similarity,
+            "snippet": snippet_text,
+        })
 
-    # similarity 내림차순 정렬 (SQL에서도 정렬하지만 혹시 몰라 한 번 더)
     results.sort(
         key=lambda x: (x["similarity"] is not None, x["similarity"]), reverse=True
     )
 
-    # rag_snippets 포맷으로 재구성
     snippets: List[Dict[str, Any]] = []
     for r in results:
         snippet_entry: Dict[str, Any] = {
@@ -672,7 +613,6 @@ def _hybrid_search_documents(
             "title": r["title"],
             "source": r["region"] or "policy_db",
             "snippet": r["snippet"] or r["benefits"] or r["requirements"] or "",
-            # 초기 score는 벡터 유사도와 동일하게 설정
             "similarity": r["similarity"],
             "score": r["similarity"],
         }
@@ -686,10 +626,49 @@ def _hybrid_search_documents(
             snippet_entry["benefits"] = r["benefits"]
         snippets.append(snippet_entry)
 
-    # 🔍 타이밍 측정 종료
-    func_elapsed = time.time() - func_start
-    print(f"🔍 [_hybrid_search_documents] Total: {func_elapsed:.2f}s", flush=True)
+    return snippets
 
+
+def _hybrid_search_documents(
+    query_text: str,
+    merged_profile: Optional[Dict[str, Any]],
+    top_k: int = 8,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    query_text 임베딩 기반 pgvector 검색.
+    - query_text: 오직 "정책 요청용" 텍스트 (raw 또는 synthetic)만 사용
+    - title 임베딩만 사용해서 정책 제목과의 유사도 측정
+    - region 은 DB 레벨 하드 필터링
+    """
+    import time
+
+    query_text = (query_text or "").strip()
+    if not query_text:
+        return [], []
+
+    debug_keywords = extract_keywords(query_text, max_k=8)
+    region_filter = _extract_region_filter(merged_profile)
+
+    func_start = time.time()
+
+    # 임베딩 계산
+    embed_start = time.time()
+    try:
+        qvec = _embed_text(query_text)
+    except Exception as e:
+        logger.error("embed failed: %s", e)
+        return [], debug_keywords
+    logger.debug("Embedding: %.2fs", time.time() - embed_start)
+
+    qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
+
+    # pgvector 검색
+    rows = _vector_search_db(qvec_str, region_filter, top_k)
+
+    # 결과 변환
+    snippets = _format_rows_to_snippets(rows)
+
+    logger.info("_hybrid_search_documents Total: %.2fs", time.time() - func_start)
     return snippets, debug_keywords
 
 
@@ -808,7 +787,7 @@ def policy_retriever_node(state: State) -> State:
                 top_k=RAW_TOP_K,
             )
         except Exception as e:  # noqa: E722
-            print(f"[policy_retriever_node] document search failed: {e}")
+            logger.error("document search failed: %s", e)
             rag_docs = []
             debug_keywords = extract_keywords(query_text, max_k=8)
     else:
@@ -819,7 +798,7 @@ def policy_retriever_node(state: State) -> State:
         before = len(rag_docs)
         rag_docs = filter_candidates_by_profile(rag_docs, merged_profile)
         after = len(rag_docs)
-        print(f"[policy_retriever_node] profile filter: {before} -> {after} candidates")
+        logger.debug("profile filter: %d -> %d candidates", before, after)
 
     bm25_terms: List[str] = []
 
@@ -839,10 +818,7 @@ def policy_retriever_node(state: State) -> State:
                 d for d in rag_docs if (_get_sim(d) or 0.0) >= SIMILARITY_FLOOR
             ]
             if len(filtered_by_sim) >= MIN_CANDIDATES_AFTER_FLOOR:
-                print(
-                    f"[policy_retriever_node] similarity floor {SIMILARITY_FLOOR}: "
-                    f"{len(rag_docs)} -> {len(filtered_by_sim)} candidates"
-                )
+                logger.debug("similarity floor %s: %d -> %d candidates", SIMILARITY_FLOOR, len(rag_docs), len(filtered_by_sim))
                 rag_docs = filtered_by_sim
 
         # --- BM25 기반 re-ranking (컬렉션 계층 기반) ---
@@ -852,7 +828,7 @@ def policy_retriever_node(state: State) -> State:
             collection_L2,
         )
         if bm25_terms:
-            print(f"[policy_retriever_node] BM25 re-ranking with terms: {bm25_terms}")
+            logger.debug("BM25 re-ranking with terms: %s", bm25_terms)
             _apply_bm25_rerank(rag_docs, bm25_terms)
 
         # hybrid score(벡터+BM25)를 기준으로 정렬 (None은 뒤로)
@@ -872,10 +848,7 @@ def policy_retriever_node(state: State) -> State:
 
         # LLM에 넘길 최대 컨텍스트 개수 제한
         if len(rag_docs) > CONTEXT_TOP_K:
-            print(
-                f"[policy_retriever_node] context_top_k cap {CONTEXT_TOP_K}: "
-                f"{len(rag_docs)} -> {CONTEXT_TOP_K} candidates"
-            )
+            logger.debug("context_top_k cap %d: %d -> %d candidates", CONTEXT_TOP_K, len(rag_docs), CONTEXT_TOP_K)
             rag_docs = rag_docs[:CONTEXT_TOP_K]
 
     # --- 대화 저장 안내 스니펫 추가 ---

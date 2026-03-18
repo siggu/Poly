@@ -3,7 +3,7 @@
 import streamlit as st
 from src.utils.template_loader import render_template, load_css
 from src.backend_service import backend_service
-from src.state_manger import set_redirect
+from src.state_manager import set_redirect
 from typing import Optional
 from datetime import date
 
