@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.langgraph.state.ephemeral_context import State as GraphState, Message
@@ -24,13 +27,14 @@ SYSTEM_PROMPT = """
 당신은 의료·복지 지원 정책 안내 상담사입니다.
 
 ## 역할
-1. 이미 필터링이 완료된 정책 후보들을 사용자에게 안내
-2. 제공된 모든 정책을 명확하게 설명
+1. 검색된 정책 후보들을 사용자 질문에 맞게 안내
+2. 사용자 질문과 실제로 관련 있는 정책만 안내
 
-## 중요: 추가 필터링 금지
-- 제공된 정책 문서는 이미 사용자 프로필 기반으로 필터링이 완료된 상태입니다
-- 당신은 추가로 정책을 선별하거나 제외하지 않습니다
-- 제공된 모든 정책을 사용자에게 안내해야 합니다
+## 관련성 판단 (중요)
+- 사용자가 "어르신" 관련 정책을 물었는데 산모·임산부·출산 정책이 포함된 경우, 해당 정책은 제외하세요
+- 사용자가 "아동·청소년" 관련 정책을 물었는데 노인·어르신 정책이 포함된 경우, 해당 정책은 제외하세요
+- 정책의 지원 대상(requirements)이 사용자 질문의 대상과 명확히 다른 경우 안내하지 마세요
+- 관련성이 애매한 경우에는 포함하되, "해당 여부 확인 필요"로 안내하세요
 
 ## 답변 형식
 1. **한 줄 결론** (굵게)
@@ -48,7 +52,6 @@ SYSTEM_PROMPT = """
 - 정보 부족 시 "추가 확인 필요" 명시
 - 민감 개인정보 요구 금지
 - 답변 마지막에 참고 정책 제목과 URL 목록 정리
-- **제공된 모든 정책을 출력** (임의로 개수를 줄이지 않음)
 """
 
 # ───────────────────────────────────────────────────────────
@@ -208,10 +211,7 @@ def run_answer_llm(
 
     # 프롬프트 크기 로그
     prompt_len = len(user_prompt)
-    print(
-        f"📝 [LLM] 프롬프트 구성: {prompt_elapsed:.3f}s, 길이: {prompt_len} chars",
-        flush=True,
-    )
+    logger.debug("LLM 프롬프트 구성: %.3fs, 길이: %d chars", prompt_elapsed, prompt_len)
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -234,17 +234,13 @@ def run_answer_llm(
 
         # 🔥 총 소요 시간 로그
         total_elapsed = time.time() - total_start
-        print(
-            f"✅ [LLM] API 호출: {api_elapsed:.2f}s, 응답 길이: {result_len} chars",
-            flush=True,
-        )
-        print(f"✅ [LLM] 총 소요시간: {total_elapsed:.2f}s", flush=True)
+        logger.info("LLM API 호출: %.2fs, 응답 길이: %d chars, 총: %.2fs", api_elapsed, result_len, total_elapsed)
 
         return result
 
     except Exception as e:
         total_elapsed = time.time() - total_start
-        print(f"🔥 [LLM ERROR] {total_elapsed:.2f}s 후 에러 발생: {e}", flush=True)
+        logger.error("LLM 에러 (%.2fs 후): %s", total_elapsed, e)
         raise
 
 
@@ -274,10 +270,7 @@ def run_answer_llm_stream(
     )
     prompt_elapsed = time.time() - prompt_start
     prompt_len = len(user_prompt)
-    print(
-        f"📝 [LLM Stream] 프롬프트 구성: {prompt_elapsed:.3f}s, 길이: {prompt_len} chars",
-        flush=True,
-    )
+    logger.debug("LLM Stream 프롬프트 구성: %.3fs, 길이: %d chars", prompt_elapsed, prompt_len)
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -308,24 +301,18 @@ def run_answer_llm_stream(
                 # 🔥 첫 번째 청크 시간 기록
                 if first_chunk_time is None:
                     first_chunk_time = time.time() - api_start
-                    print(
-                        f"⚡ [LLM Stream] 첫 토큰 도착: {first_chunk_time:.2f}s",
-                        flush=True,
-                    )
+                    logger.debug("LLM Stream 첫 토큰 도착: %.2fs", first_chunk_time)
 
                 yield content
 
         # 🔥 스트리밍 완료 로그
         total_elapsed = time.time() - total_start
         api_elapsed = time.time() - api_start
-        print(
-            f"✅ [LLM Stream] 완료: API {api_elapsed:.2f}s, 총 {total_elapsed:.2f}s, {chunk_count} chunks, {total_chars} chars",
-            flush=True,
-        )
+        logger.info("LLM Stream 완료: API %.2fs, 총 %.2fs, %d chunks, %d chars", api_elapsed, total_elapsed, chunk_count, total_chars)
 
     except Exception as e:
         total_elapsed = time.time() - total_start
-        print(f"🔥 [LLM Stream ERROR] {total_elapsed:.2f}s 후 에러: {e}", flush=True)
+        logger.error("LLM Stream 에러 (%.2fs 후): %s", total_elapsed, e)
         yield f"\n\n[오류 발생: {str(e)}]"
 
 
@@ -409,7 +396,7 @@ def _build_fallback_text(
 def answer(state: GraphState) -> Dict[str, Any]:
     # 🔥 노드 전체 타이밍
     node_start = time.time()
-    print(f"🚀 [answer_llm 노드] 시작", flush=True)
+    logger.info("answer_llm 노드 시작")
 
     messages: List[Message] = list(state.get("messages") or [])
     retrieval = state.get("retrieval") or {}
@@ -440,7 +427,7 @@ def answer(state: GraphState) -> Dict[str, Any]:
 
     if streaming_mode:
         text = ""
-        print(f"⏭️  [answer_llm 노드] 스트리밍 모드 - LLM 호출 스킵", flush=True)
+        logger.debug("answer_llm 노드: 스트리밍 모드 - LLM 호출 스킵")
     else:
         try:
             text = run_answer_llm(
@@ -483,7 +470,7 @@ def answer(state: GraphState) -> Dict[str, Any]:
 
     # 🔥 노드 완료 로그
     node_elapsed = time.time() - node_start
-    print(f"✅ [answer_llm 노드] 완료: {node_elapsed:.2f}s", flush=True)
+    logger.info("answer_llm 노드 완료: %.2fs", node_elapsed)
 
     return {
         "answer": {

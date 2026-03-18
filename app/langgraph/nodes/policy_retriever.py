@@ -793,10 +793,10 @@ def policy_retriever_node(state: State) -> State:
     else:
         debug_keywords = extract_keywords(query_text, max_k=8)
 
-    # --- 프로필 기반 후보 필터 적용 (중위소득/기초수급/장애 등 hard filter 역할) ---
-    if merged_profile and rag_docs:
+    # --- 프로필 + 쿼리 기반 후보 필터 적용 ---
+    if rag_docs:
         before = len(rag_docs)
-        rag_docs = filter_candidates_by_profile(rag_docs, merged_profile)
+        rag_docs = filter_candidates_by_profile(rag_docs, merged_profile, query_text)
         after = len(rag_docs)
         logger.debug("profile filter: %d -> %d candidates", before, after)
 
@@ -821,12 +821,11 @@ def policy_retriever_node(state: State) -> State:
                 logger.debug("similarity floor %s: %d -> %d candidates", SIMILARITY_FLOOR, len(rag_docs), len(filtered_by_sim))
                 rag_docs = filtered_by_sim
 
-        # --- BM25 기반 re-ranking (컬렉션 계층 기반) ---
-        bm25_terms = _build_bm25_terms_from_layers(
-            collection_L0,
-            collection_L1,
-            collection_L2,
-        )
+        # --- BM25 기반 re-ranking (현재 쿼리 키워드 + 컬렉션 계층) ---
+        # 현재 쿼리 키워드를 BM25에 포함해 쿼리 맥락과 무관한 정책의 score를 낮춤
+        query_kw_terms = extract_keywords(query_text, max_k=6)
+        collection_terms = _build_bm25_terms_from_layers(collection_L0, collection_L1, collection_L2)
+        bm25_terms = query_kw_terms + collection_terms
         if bm25_terms:
             logger.debug("BM25 re-ranking with terms: %s", bm25_terms)
             _apply_bm25_rerank(rag_docs, bm25_terms)

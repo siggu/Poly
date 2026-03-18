@@ -90,8 +90,7 @@ def _parse_median_income_condition(text: str) -> Optional[Tuple[Optional[float],
     if min_ratio is None and max_ratio is None:
         return None
 
-    # 디버깅용 출력
-    print("[median_parser] Parsed cond:", (min_ratio, max_ratio), "from:", norm[:80])
+    log.debug("median_parser cond: %s from: %s", (min_ratio, max_ratio), norm[:80])
     return (min_ratio, max_ratio)
 
 def _extract_profile_numeric(profile: Optional[Dict[str, Any]], key: str) -> Optional[float]:
@@ -136,12 +135,10 @@ def _is_eligible_by_median_income(profile: Optional[Dict[str, Any]], doc: Dict[s
     cond = _parse_median_income_condition(req_text)
 
     if not cond:
-        print("[median_filter] NO_COND user_pct=", user_pct, "title=", doc.get("title"))
         return True
 
-    min_r, max_r = cond  # 이 값들은 항상 '퍼센트 숫자'(예: 80, 100, 120)
-
-    print("[median_filter] user_pct=", user_pct, "cond=", cond, "title=", doc.get("title"))
+    min_r, max_r = cond
+    log.debug("median_filter user_pct=%s cond=%s title=%s", user_pct, cond, doc.get("title"))
 
     # 예: "중위소득 50% 이상"인데 사용자는 40%
     if min_r is not None and user_pct < min_r:
@@ -246,30 +243,90 @@ def _is_eligible_by_disability(profile: Optional[Dict[str, Any]], doc: Dict[str,
 
 
 # -------------------------------------------------------------------
+# 대상 인구 충돌 필터
+# -------------------------------------------------------------------
+
+# 인구 그룹별 (쿼리 신호 키워드, 문서 배타적 키워드) 매핑
+_DEMOGRAPHIC_GROUPS = [
+    {
+        # 노인/어르신 쿼리 → 산모·아동 정책 제외
+        "query_signals": {"어르신", "노인", "고령", "시니어", "노년"},
+        "doc_exclusive": {"산모", "임산부", "임신", "출산", "신생아", "영유아", "유아", "아동", "어린이", "청소년"},
+    },
+    {
+        # 산모/출산 쿼리 → 노인 정책 제외
+        "query_signals": {"산모", "임산부", "임신", "출산", "유축기"},
+        "doc_exclusive": {"어르신", "노인", "고령"},
+    },
+    {
+        # 아동/청소년 쿼리 → 노인·산모 정책 제외
+        "query_signals": {"아동", "어린이", "영유아", "청소년"},
+        "doc_exclusive": {"어르신", "노인", "고령", "산모", "임산부", "임신"},
+    },
+]
+
+
+def _is_eligible_by_target_audience(
+    query_text: Optional[str],
+    doc: Dict[str, Any],
+) -> bool:
+    """
+    사용자 쿼리와 정책 대상 인구 간의 명백한 충돌을 감지해 필터링.
+
+    예:
+      - 쿼리 "어르신을 위한 지원" + 정책 requirements에 "산모" → False
+      - 쿼리 "출산 지원" + 정책 requirements에 "어르신" → False
+    """
+    if not query_text:
+        return True
+
+    q = query_text.lower()
+    req_text = ((doc.get("requirements") or "") + " " + (doc.get("title") or "")).lower()
+
+    for group in _DEMOGRAPHIC_GROUPS:
+        # 쿼리가 이 그룹을 명시하는지 확인
+        if not any(sig in q for sig in group["query_signals"]):
+            continue
+        # 정책이 충돌 대상 그룹 전용인지 확인
+        if any(excl in req_text for excl in group["doc_exclusive"]):
+            log.debug(
+                "대상 인구 충돌 필터: query='%s', doc='%s' 제외",
+                query_text[:40], doc.get("title", "")[:40],
+            )
+            return False
+
+    return True
+
+
+# -------------------------------------------------------------------
 # 외부에서 쓰는 진입점
 # -------------------------------------------------------------------
 
 def filter_candidates_by_profile(
     snippets: List[Dict[str, Any]],
     profile: Optional[Dict[str, Any]],
+    query_text: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    프로필 기반으로 RAG 후보(snippets)를 후처리 필터링.
-    - 현재 구현:
-      * 중위소득 조건
-      * 기초생활보장/차상위 조건
-      * 장애등급 조건
+    프로필 + 쿼리 기반으로 RAG 후보(snippets)를 후처리 필터링.
+    - 중위소득 조건
+    - 기초생활보장/차상위 조건
+    - 장애등급 조건
+    - 대상 인구 충돌 (어르신 vs 산모 등)
     """
-    if not snippets or not profile:
+    if not snippets:
         return snippets
 
     filtered: List[Dict[str, Any]] = []
     for doc in snippets:
-        if not _is_eligible_by_median_income(profile, doc):
-            continue
-        if not _is_eligible_by_basic_benefit(profile, doc):
-            continue
-        if not _is_eligible_by_disability(profile, doc):
+        if profile:
+            if not _is_eligible_by_median_income(profile, doc):
+                continue
+            if not _is_eligible_by_basic_benefit(profile, doc):
+                continue
+            if not _is_eligible_by_disability(profile, doc):
+                continue
+        if not _is_eligible_by_target_audience(query_text, doc):
             continue
         filtered.append(doc)
 
